@@ -3,8 +3,8 @@ quantifty excess steps between stim conditions across groups
 @peterdoohan
 """
 
-## test
 # %% Imports
+from math import e
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -26,34 +26,45 @@ from scipy.spatial.distance import euclidean
 
 def plot_random_effects_summary(
     excess_steps_df,
-    min_starting_dist=None,
-    outlier_thres=250,
-    ignore_first_trial_after_stim=False,
     stim_day_range=(4, np.inf),
+    outlier_thres=250,
+    min_starting_dist=None,
+    ignore_low_laser_power_sessions=False,
+    ignore_first_trial_after_stim=False,
+    steps_as_nodes=True,
     print_stats=True,
     ax=None,
 ):
     """ """
-    # average excess steps per subject over trials
+    # filter data
     _df = excess_steps_df.copy()
     if stim_day_range is not None:
         _df = _df[_df.total_stim_days.between(*stim_day_range)]
-    if ignore_first_trial_after_stim:
-        _df = _df[_df.trials_since_stim != 1]
-    if min_starting_dist is not None:
-        _df = _df[_df.start_geodesic_dist >= min_starting_dist]
     if outlier_thres is not None:
         _df = _df[_df.n_excess_steps <= outlier_thres]
+    if min_starting_dist is not None:
+        _df = _df[_df.start_geodesic_dist >= min_starting_dist]
+    if ignore_low_laser_power_sessions:
+        _df = _df[~_df.low_laser_power]
+    if ignore_first_trial_after_stim:
+        _df = _df[_df.trials_since_stim != 1]
+
+    # average excess steps per subject over trials
     df = _df.groupby(["condition", "subject_ID", "stim_trial"]).n_excess_steps.mean().reset_index()
+    if steps_as_nodes:
+        df["n_excess_steps"] = df["n_excess_steps"] / 2  # convert steps to nodes
+
     # set up fig
     conditions = ["control", "opto"]
     x_pos = {cond: i for i, cond in enumerate(conditions)}
+    y_max = df.n_excess_steps.max() * 1.1
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(2, 3))
     ax.spines[["top", "right"]].set_visible(False)
     ax.set_xticks([x_pos[c] for c in conditions])
     ax.set_xticklabels(conditions)
     ax.set_xlim(-0.4, len(conditions) - 0.6)
+    ax.set_ylim(0, y_max)
     condition2color = {"control": "black", "opto": "#0077FF"}
 
     # plot subject-level paired points
@@ -66,6 +77,7 @@ def plot_random_effects_summary(
             y_off = row[False]
             y_on = row[True]
             ax.plot([x_off, x_on], [y_off, y_on], "-", color="lightgrey", lw=1.5, alpha=0.8)
+
     # plot cross subject mean ± SEM
     sns.pointplot(
         data=df,
@@ -81,19 +93,37 @@ def plot_random_effects_summary(
     sns.move_legend(
         ax,
         "lower center",
-        bbox_to_anchor=(0.5, 1),
         ncol=2,
-        title="stim trial",
+        title="light on",
         frameon=True,
-        fontsize="small",
+        fontsize="x-small",
     )
+    ax.set_xlabel("group")
+    ax.set_ylabel("excess steps")
 
     if print_stats:
-        # model = smf.mixedlm("n_excess_steps ~ condition * stim_trial", data=df, groups="subject_ID").fit()
-        # print(model.summary())
-        print(mixed_anova(dv="n_excess_steps", within="stim_trial", between="condition", subject="subject_ID", data=df))
-
-    return
+        stats_df = mixed_anova(
+            dv="n_excess_steps",
+            within="stim_trial",
+            between="condition",
+            subject="subject_ID",
+            data=df,
+        )
+        # extract and display relevant stats
+        cond = stats_df.loc[stats_df["Source"] == "condition"].iloc[0]
+        stim = stats_df.loc[stats_df["Source"] == "stim_trial"].iloc[0]
+        inter = stats_df.loc[stats_df["Source"] == "Interaction"].iloc[0]
+        textstr = (
+            f"Group: p={cond['p-unc']:.3f}\n" f"Stim  : p={stim['p-unc']:.3f}\n" f"Int     : p={inter['p-unc']:.3f}\n"
+        )
+        ax.text(
+            0.05,
+            0.80,
+            textstr,
+            transform=ax.transAxes,
+            fontsize=8,
+        )
+        print(stats_df)
 
 
 # %% excess steps functions
@@ -205,5 +235,12 @@ def get_session_excess_steps_df(
             }
         )
     excess_steps_df = pd.DataFrame(results)
+
+    # some sessions had low laser power where fiber was partially broken, keep note of this
+    if session.session_notes is not None and "laser power low" in session.session_notes:
+        low_laser_power = True
+    else:
+        low_laser_power = False
+    excess_steps_df["low_laser_power"] = low_laser_power
 
     return excess_steps_df
