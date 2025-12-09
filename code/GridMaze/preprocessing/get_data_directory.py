@@ -76,7 +76,7 @@ def init_data_directory():
         subject_info = _subject_info_df.loc[subject_ID]
         big_maze_rig = subject_info["big_maze_rig"]
         total_stim_days = 0
-        for maze_name, _dates in RIG2MAZE_DATES[big_maze_rig].items():
+        for i, (maze_name, _dates) in enumerate(RIG2MAZE_DATES[big_maze_rig].items()):
             start_date = date.fromisoformat(_dates["start"])
             end_date = date.fromisoformat(_dates["end"])
             stim_start_date = date.fromisoformat(_dates["start_stim"])
@@ -110,6 +110,7 @@ def init_data_directory():
                     "session_type": "maze",
                     "big_maze_rig": subject_info.big_maze_rig,
                     "maze_name": maze_name,
+                    "maze_order": i + 1,
                     "day_on_maze": day_on_maze,
                     "experiment_phase": exp_phase,
                     "tethered": tethered,

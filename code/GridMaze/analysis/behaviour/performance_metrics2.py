@@ -11,7 +11,6 @@ from matplotlib import pyplot as plt
 from scipy import stats
 from matplotlib.lines import Line2D
 import statsmodels.formula.api as smf
-from sympy import plot
 
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.maze import representations as mr

@@ -49,6 +49,7 @@ def get_maze_sessions(
     conditions="all",  # opto, control
     big_maze_rig="all",  # L, R
     sex="all",  # male, female
+    maze_order="all",
     maze_names="all",  # maze_1, maze_2
     days_on_maze="all",
     experiment_phases="all",  # learning, expert
@@ -96,6 +97,9 @@ def get_maze_sessions(
                 experimental_day = session_info["experimental_day"]
                 if not experimental_days == "all":
                     if not experimental_day in experimental_days:
+                        continue
+                if not maze_order == "all":
+                    if session_info["maze_order"] not in maze_order:
                         continue
                 if not maze_names == "all":
                     if not session_info["maze_name"] in maze_names:
@@ -155,7 +159,7 @@ class MazeSession:
         return (
             f"-MazeSession--------------------------------------------------------------\n"
             f"    Subject ID: {self.subject_ID}, Condition: {self.condition}, Date: {self.date}\n"
-            f"    Maze: {self.maze_name}, Day: {self.day_on_maze}, Stim On: {self.stim}\n"
+            f"    Maze: {self.maze_name}, Maze Order: {self.maze_order}, Day on Maze: {self.day_on_maze}, Stim: {self.stim}, \n"
         )
 
     def simple_maze(self):

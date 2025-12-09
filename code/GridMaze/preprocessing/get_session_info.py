@@ -35,6 +35,7 @@ def get_session_info(session_dir):
         "experiment_phase": session_dir.experiment_phase,
         "maze_name": maze_name,
         "day_on_maze": int(session_dir.day_on_maze),
+        "maze_order": int(session_dir.maze_order),
         "stim": bool(session_dir.stim),
         "stim_day": None if np.isnan(session_dir.stim_day) else int(session_dir.stim_day),
         "total_stim_days": None if np.isnan(session_dir.total_stim_days) else int(session_dir.total_stim_days),
