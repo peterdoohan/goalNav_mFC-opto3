@@ -1,0 +1,208 @@
+"""
+quantifty excess steps between stim conditions across groups
+@peterdoohan
+"""
+
+# %% Imports
+import numpy as np
+import pandas as pd
+import networkx as nx
+from matplotlib import pyplot as plt
+import seaborn as sns
+import statsmodels.formula.api as smf
+from pingouin import mixed_anova
+
+
+from GridMaze.maze import representations as mr
+from GridMaze.analysis.core import get_sessions as gs
+from GridMaze.analysis.behaviour import trajectory_plotting as tp
+from scipy.spatial.distance import euclidean
+
+# %% Global Variables
+
+# %% Summary and plotting functions
+
+
+def plot_random_effects_summary(
+    excess_steps_df,
+    min_starting_dist=None,
+    outlier_thres=250,
+    ignore_first_trial_after_stim=False,
+    stim_day_range=(4, np.inf),
+    print_stats=True,
+    ax=None,
+):
+    """ """
+    # average excess steps per subject over trials
+    _df = excess_steps_df.copy()
+    if stim_day_range is not None:
+        _df = _df[_df.total_stim_days.between(*stim_day_range)]
+    if ignore_first_trial_after_stim:
+        _df = _df[_df.trials_since_stim != 1]
+    if min_starting_dist is not None:
+        _df = _df[_df.start_geodesic_dist >= min_starting_dist]
+    if outlier_thres is not None:
+        _df = _df[_df.n_excess_steps <= outlier_thres]
+    df = _df.groupby(["condition", "subject_ID", "stim_trial"]).n_excess_steps.mean().reset_index()
+    # set up fig
+    conditions = ["control", "opto"]
+    x_pos = {cond: i for i, cond in enumerate(conditions)}
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(2, 3))
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_xticks([x_pos[c] for c in conditions])
+    ax.set_xticklabels(conditions)
+    ax.set_xlim(-0.4, len(conditions) - 0.6)
+    condition2color = {"control": "black", "opto": "#0077FF"}
+
+    # plot subject-level paired points
+    for cond in conditions:
+        cond_df = df[df["condition"] == cond]
+        cond_df = cond_df.set_index(["subject_ID", "stim_trial"]).n_excess_steps.unstack()
+        x_off = x_pos[cond] - 0.30
+        x_on = x_pos[cond] + 0.30
+        for subj, row in cond_df.iterrows():
+            y_off = row[False]
+            y_on = row[True]
+            ax.plot([x_off, x_on], [y_off, y_on], "-", color="lightgrey", lw=1.5, alpha=0.8)
+    # plot cross subject mean ± SEM
+    sns.pointplot(
+        data=df,
+        x="condition",
+        y="n_excess_steps",
+        hue="stim_trial",
+        dodge=0.3,
+        linestyle="none",
+        errorbar="se",
+        palette=[condition2color[c] for c in conditions],
+        ax=ax,
+    )
+    sns.move_legend(
+        ax,
+        "lower center",
+        bbox_to_anchor=(0.5, 1),
+        ncol=2,
+        title="stim trial",
+        frameon=True,
+        fontsize="small",
+    )
+
+    if print_stats:
+        # model = smf.mixedlm("n_excess_steps ~ condition * stim_trial", data=df, groups="subject_ID").fit()
+        # print(model.summary())
+        print(mixed_anova(dv="n_excess_steps", within="stim_trial", between="condition", subject="subject_ID", data=df))
+
+    return
+
+
+# %% excess steps functions
+
+
+def get_excess_steps_df(
+    sessions=None,
+    first_goal_sight=True,
+    goal_sight_kwargs={"alpha_deg": 160, "smooth_SD": 4, "min_consecutive": 0.4},
+    verbose=True,
+):
+    """ """
+    if sessions is None:
+        # load all stim sessions
+        if verbose:
+            print("Loading all stim sessions...")
+        sessions = gs.get_maze_sessions(
+            subject_IDs="all",
+            conditions="all",
+            stim_only=True,
+            with_data=["trials_df", "navigation_df", "trajectory_decisions_df"],
+            must_have_data=True,
+            verbose=True,
+        )
+    # calc excess steps for each session
+    dfs = []
+    for session in sessions:
+        if verbose:
+            print(session.name)
+        _df = get_session_excess_steps_df(
+            session,
+            first_goal_sight=first_goal_sight,
+            goal_sight_kwargs=goal_sight_kwargs,
+        )
+        dfs.append(_df)
+    excess_steps_df = pd.concat(dfs, ignore_index=True)
+    return excess_steps_df
+
+
+def get_session_excess_steps_df(
+    session,
+    first_goal_sight=True,
+    goal_sight_kwargs={"alpha_deg": 160, "smooth_SD": 4, "min_consecutive": 0.4},
+):
+    """ """
+    # load data
+    simple_maze = session.simple_maze()
+    skeleton_maze = session.skeleton_maze()
+    extended_maze = mr.get_extended_simple_maze(simple_maze)
+    simple_label2coord = mr.get_maze_label2coord(simple_maze)
+    simple_label2pos = mr.get_maze_label2position(simple_maze)
+    skeleton_label2coord = mr.get_maze_label2coord(skeleton_maze)
+    decisions_df = session.trajectory_decisions_df
+    navigation_df = session.navigation_df
+    trials_df = session.trials_df.copy()
+    trials_df.set_index("trial", inplace=True)
+
+    # calc excess steps for each trial
+    trials = trials_df.index.unique()
+    results = []
+    for trial in trials:
+        # filter for trial
+        nav_df = navigation_df[(navigation_df.trial == trial) & (navigation_df.trial_phase == "navigation")]
+        dec_df = decisions_df[(decisions_df.trial == trial) & (decisions_df.trial_phase == "navigation")]
+        if len(nav_df) == 0 or len(dec_df) == 0:
+            continue
+        if first_goal_sight:
+            # further filter out times before subject has seen goal
+            first_idx, first_time = tp.get_first_goal_sight(nav_df, **goal_sight_kwargs)
+            if first_idx is not None:
+                nav_df = nav_df[nav_df.time >= first_time]
+                dec_df = dec_df[dec_df.time >= first_time]
+        if len(nav_df) == 0 or len(dec_df) == 0:
+            continue
+        # calculate excess steps
+        traj = dec_df.maze_position.values
+        start = traj[0]
+        goal = dec_df.goal.unique()[0]
+        shortest_path = nx.shortest_path(
+            extended_maze, simple_label2coord[start], simple_label2coord[goal], weight=None
+        )
+        shortest_path_length = len(shortest_path)
+        path_length = len(traj)
+        n_excess_steps = path_length - shortest_path_length
+        # calculate useful variables for stratifying excess steps across trials
+        start_pos = nav_df.iloc[0].centroid_position.values
+        start_skel = nav_df.iloc[0].maze_position.skeleton
+        start_euclidean_dist = euclidean(start_pos, simple_label2pos[goal])
+        start_geodesic_dist = nx.shortest_path_length(
+            skeleton_maze, skeleton_label2coord[start_skel], skeleton_label2coord[goal + "_C"], weight="weight"
+        )
+        # store results
+        results.append(
+            {
+                "subject_ID": session.subject_ID,
+                "condition": session.condition,
+                "maze_name": session.maze_name,
+                "stim_day": session.stim_day,
+                "total_stim_days": session.total_stim_days,
+                "day_on_maze": session.day_on_maze,
+                "trial_unique_ID": nav_df.trial_unique_ID.unique()[0],
+                "stim_trial": trials_df.loc[trial, ("stim_trial", "")],
+                "trials_since_stim": trials_df.loc[trial, ("trials_since_stim", "")],
+                "n_excess_steps": n_excess_steps,
+                "shortest_path_length": shortest_path_length,
+                "path_length": path_length,
+                "start_euclidean_dist": start_euclidean_dist,
+                "start_geodesic_dist": start_geodesic_dist,
+            }
+        )
+    excess_steps_df = pd.DataFrame(results)
+
+    return excess_steps_df

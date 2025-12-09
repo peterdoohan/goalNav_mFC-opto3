@@ -1,0 +1,7 @@
+**/mazeSLEAP/models/
+**/__pycache__/
+**/err/
+**/out/
+**/slurm/
+/data/*
+/results/*
