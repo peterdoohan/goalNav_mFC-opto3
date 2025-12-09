@@ -29,7 +29,6 @@ def plot_performance_summary(learning_df, expert_df, maze_order=1, print_stats=T
     plot_expert_performance_summary(
         expert_df, maze_order=maze_order, print_stats=print_stats, y_axis_off=True, ax=axes[1]
     )
-    return
 
 
 def plot_learning_summary(learning_curve_df, maze_order=1, print_stats=True, ax=None):
@@ -68,6 +67,7 @@ def plot_learning_summary(learning_curve_df, maze_order=1, print_stats=True, ax=
 
     # stats
     if print_stats:
+        print("Learning stats:")
         model = mixedlm("total_trials ~ condition * day_on_maze", df, groups=df["subject_ID"])
         result = model.fit(reml=False)
         print(result.summary())
@@ -169,6 +169,7 @@ def plot_expert_performance_summary(
     # stats
     if print_stats:
         # non-paired t-test
+        print("Expert performance stats:")
         control_trials = subj_av[subj_av.condition == "control"].total_trials
         opto_trials = subj_av[subj_av.condition == "opto"].total_trials
         t_stat, p_val = ttest_ind(control_trials, opto_trials)
