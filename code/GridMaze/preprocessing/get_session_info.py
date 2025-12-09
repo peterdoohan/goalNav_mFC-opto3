@@ -44,6 +44,7 @@ def get_session_info(session_dir):
         "goal_set": maze_info["goals"],
         "big_maze_rig": session_dir.big_maze_rig,
         "reward_size": _get_reward_vol(session_df),
+        "session_notes": session_dir.session_notes,
     }
     return session_info
 

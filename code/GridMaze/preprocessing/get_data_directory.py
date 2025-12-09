@@ -43,6 +43,9 @@ with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as infile:
 with open(EXPERIMENT_INFO_PATH / "ignore_sessions.json", "r") as infile:
     IGNORE_SESSIONS = json.load(infile)
 
+with open(EXPERIMENT_INFO_PATH / "session_notes.json", "r") as infile:
+    SESSION_NOTES = json.load(infile)
+
 with open(EXPERIMENT_INFO_PATH / "days_off.json", "r") as infile:
     DAYS_OFF = json.load(infile)
 
@@ -97,6 +100,7 @@ def init_data_directory():
                     _date += timedelta(days=1)
                     day_on_maze += 1
                     continue
+                session_notes = _get_session_notes(subject_ID, _date)
                 session_info = {
                     "subject_ID": subject_ID,
                     "condition": subject_info.condition,
@@ -112,11 +116,19 @@ def init_data_directory():
                     "stim": stim,
                     "stim_day": stim_day,
                     "total_stim_days": total_stim_days if stim else np.nan,
+                    "session_notes": session_notes,
                 }
                 session_infos.append(session_info)
                 _date += timedelta(days=1)
                 day_on_maze += 1
     return pd.DataFrame(session_infos)
+
+
+def _get_session_notes(subject_ID, date):
+    for session_note in SESSION_NOTES:
+        if session_note["subject_ID"] == subject_ID and session_note["date"] == date.isoformat():
+            return session_note["notes"]
+    return None
 
 
 def _check_ignore(subject_ID, date):

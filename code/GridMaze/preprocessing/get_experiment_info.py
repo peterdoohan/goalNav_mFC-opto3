@@ -189,6 +189,7 @@ SUBJECT_INFO_DF = pd.DataFrame(
         },
     ]
 )
+# %% Misc
 
 IGNORE_SESSIONS = [
     {
@@ -204,6 +205,36 @@ IGNORE_SESSIONS = [
 ]
 
 DAYS_OFF = ["2025-11-29"]
+
+SESSION_NOTES = [
+    {"subject_ID": "mFC-opto_28", "date": "2025-11-20", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_29", "date": "2025-11-20", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_30", "date": "2025-11-20", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_27", "date": "2025-11-21", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_28", "date": "2025-11-21", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_29", "date": "2025-11-21", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_30", "date": "2025-11-21", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_35", "date": "2025-11-21", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_36", "date": "2025-11-21", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_37", "date": "2025-11-21", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_38", "date": "2025-11-21", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_27", "date": "2025-11-22", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_28", "date": "2025-11-22", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_29", "date": "2025-11-22", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_30", "date": "2025-11-22", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_35", "date": "2025-11-22", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_36", "date": "2025-11-22", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_37", "date": "2025-11-22", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_38", "date": "2025-11-22", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_27", "date": "2025-11-23", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_28", "date": "2025-11-23", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_29", "date": "2025-11-23", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_30", "date": "2025-11-23", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_35", "date": "2025-11-23", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_36", "date": "2025-11-23", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_37", "date": "2025-11-23", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_38", "date": "2025-11-23", "notes": ["laser power low"]},
+]
 
 # %%
 
@@ -414,6 +445,7 @@ FILENAME2DATA_STRUCTURE = {
     "maze_measurements": MAZE_MEASUREMENTS,
     "ignore_sessions": IGNORE_SESSIONS,
     "days_off": DAYS_OFF,
+    "session_notes": SESSION_NOTES,
 }
 
 
