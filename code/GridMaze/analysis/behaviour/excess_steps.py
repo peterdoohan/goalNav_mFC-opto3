@@ -4,15 +4,14 @@ quantifty excess steps between stim conditions across groups
 """
 
 # %% Imports
-from math import e
+import json
 import numpy as np
 import pandas as pd
 import networkx as nx
 from matplotlib import pyplot as plt
 import seaborn as sns
-import statsmodels.formula.api as smf
 from pingouin import mixed_anova
-
+from scipy.ndimage import gaussian_filter1d
 
 from GridMaze.maze import representations as mr
 from GridMaze.analysis.core import get_sessions as gs
@@ -20,8 +19,82 @@ from GridMaze.analysis.behaviour import trajectory_plotting as tp
 from scipy.spatial.distance import euclidean
 
 # %% Global Variables
+from GridMaze.paths import EXPERIMENT_INFO_PATH
 
-# %% Summary and plotting functions
+with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
+    SUBJECT_IDS = json.load(f)
+
+# %% Early stim effects
+
+
+def plot_early_stim_effects(
+    excess_steps_df,
+    stim_day_range=(1, 8),
+    outlier_thres=250,
+    ignore_low_laser_power_sessions=True,
+    steps_as_nodes=True,
+    smooth_SD=False,
+    ax=None,
+):
+    """ """
+    if ax is None:
+        f, axes = plt.subplots(1, 2, figsize=(4, 2), sharey=True)
+    for ax in axes:
+        ax.spines[["top", "right"]].set_visible(False)
+
+    # filter data
+    _df = excess_steps_df.copy()
+    if outlier_thres is not None:
+        _df = _df[_df.n_excess_steps <= outlier_thres]
+    if ignore_low_laser_power_sessions:
+        _df = _df[~_df.low_laser_power]
+
+    # average excess steps per subject per day
+    df = _df.groupby(["condition", "subject_ID", "stim_trial", "stim_day"]).n_excess_steps.mean().reset_index()
+    if steps_as_nodes:
+        df["n_excess_steps"] = df["n_excess_steps"] / 2  # convert steps to nodes
+    condition_grouped_df = df.reset_index().groupby(["condition", "stim_trial", "stim_day"]).n_excess_steps
+    mean_df = condition_grouped_df.mean()
+    sem_df = condition_grouped_df.sem()
+    subject_grouped_df = df.set_index(["subject_ID", "stim_trial"]).sort_index()
+
+    # plot
+    conditions = ["control", "opto"]
+    colors = ["black", "#0077FF"]
+    for cond, ax in zip(conditions, axes):
+        for stim_trial, color in zip([False, True], colors):
+            _means = mean_df.loc[cond, stim_trial]
+            days = _means.index.values
+            _means = _means.values
+            _sems = sem_df.loc[cond, stim_trial].values
+            if smooth_SD:
+                _means = gaussian_filter1d(_means, sigma=smooth_SD, mode="nearest")
+                _sems = gaussian_filter1d(_sems, sigma=smooth_SD, mode="nearest")
+            ax.plot(days, _means, color=color, label=f"stim: {stim_trial}")
+            ax.fill_between(
+                days,
+                (_means - _sems),
+                (_means + _sems),
+                color=color,
+                alpha=0.3,
+            )
+            for subject in SUBJECT_IDS:
+                subj_df = subject_grouped_df.loc[subject, stim_trial]
+                ax.plot(
+                    subj_df.stim_day.values,
+                    subj_df.n_excess_steps.values,
+                    "-",
+                    color=color,
+                    lw=0.5,
+                    alpha=0.5,
+                )
+        ax.set_title(cond)
+        ax.set_xlabel("stim day")
+        ax.set_ylabel("excess steps")
+        ax.set_xlim(stim_day_range)
+
+
+# %% Group x stim summary and plotting functions
 
 
 def plot_random_effects_summary(
