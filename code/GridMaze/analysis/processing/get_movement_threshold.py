@@ -11,21 +11,24 @@ from GridMaze.analysis.core import load_data
 from sklearn.mixture import GaussianMixture
 
 # %% Global variables
-PROCESSED_DATA_PATH = Path("../data/processed_data")
-SMALL_CONSTANT = 0.0001
+from GridMaze.paths import PROCESSED_DATA_PATH, ANALYSIS_INFO_PATH
 
-ANALYSIS_INFO_PATH = Path("../data/analysis_info")
+SMALL_CONSTANT = 0.0001
 # %% Main function
 
 
 def save_movement_threshold():
-    movement_threshold = get_movement_threshold(plot=False)
+    movement_thresholds = get_movement_threshold(plot=False, return_grand_average=False)
+    with open(ANALYSIS_INFO_PATH / "subject_movement_thresholds.json", "w") as outfile:
+        json.dump(movement_thresholds, outfile)
+    movement_threshold = np.mean(list(movement_thresholds.values()))
     with open(ANALYSIS_INFO_PATH / "movement_threshold.json", "w") as outfile:
         json.dump(movement_threshold, outfile)
-    return print(f"Movement threshold saved as {movement_threshold}")
+
+    return print(f"Movement threshold saved to analysis_info")
 
 
-def get_movement_threshold(plot=True):
+def get_movement_threshold(plot=True, smooth_SD=0.06, return_grand_average=False):
     subject_IDs = [f.name for f in PROCESSED_DATA_PATH.iterdir() if f.is_dir()]
     subject_movement_thresholds = []
     for subject in subject_IDs:
@@ -35,7 +38,7 @@ def get_movement_threshold(plot=True):
             trajectories_df = load_data.load(session / "frames.trajectories.htsv")
             if trajectories_df is None:
                 continue
-            velocities = get_velocities(trajectories_df)
+            velocities = get_velocities(trajectories_df, smooth_SD=smooth_SD)
             speeds = get_speeds(velocities)
             subject_speeds.append(speeds)
         if subject_speeds == []:
@@ -62,7 +65,10 @@ def get_movement_threshold(plot=True):
             ax[1].axvline(np.exp(threshold), color="green")
             ax[1].set_xlabel("speed")
             ax[1].set_xlim(0, 0.6)
-    return np.mean(subject_movement_thresholds)
+    if return_grand_average:
+        return np.mean(subject_movement_thresholds)
+    else:
+        return {subj: float(thres) for subj, thres in zip(subject_IDs, subject_movement_thresholds)}
 
 
 def get_velocities(trajectories_df, smooth_SD=0.03, frame_rate=60):

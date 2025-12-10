@@ -18,8 +18,9 @@ from GridMaze.analysis.core import get_sessions as gs
 # %% Global Variables
 from GridMaze.paths import ANALYSIS_INFO_PATH
 
-with open(ANALYSIS_INFO_PATH / "movement_threshold.json", "r") as infile:
-    MOVEMENT_THRESHOLD = json.load(infile)
+with open(ANALYSIS_INFO_PATH / "subject_movement_thresholds.json", "r") as infile:
+    SUBJECT_MOVEMENT_THRESHOLDS = json.load(infile)
+
 
 FRAME_RATE = 60
 
@@ -84,7 +85,7 @@ def get_session_stationary_bouts_dfs(session, speed_smooth_SD=5, min_bout_durati
         speed = trial_df.speed.values
         if speed_smooth_SD:
             speed = gaussian_filter1d(speed, sigma=speed_smooth_SD)
-        moving = speed >= MOVEMENT_THRESHOLD
+        moving = speed >= SUBJECT_MOVEMENT_THRESHOLDS[session.subject_ID]
 
         trial_duration = len(trial_df) / FRAME_RATE
         total_stationary_time = np.sum(~moving) / FRAME_RATE
@@ -136,7 +137,7 @@ def get_session_stationary_bouts_dfs(session, speed_smooth_SD=5, min_bout_durati
     return stationary_df, bouts_df
 
 
-def plot_trial_speed_profiles(session, trial, speed_smooth_SD=8, ax=None):
+def plot_trial_speed_profiles(session, trial, speed_smooth_SD=4, ax=None):
     """ """
     # set up figure
     if ax is None:
@@ -167,6 +168,6 @@ def plot_trial_speed_profiles(session, trial, speed_smooth_SD=8, ax=None):
     if stim_mask.any():
         ax.plot(time[stim_mask], speed[stim_mask], color="#0077FF", lw=5, alpha=0.4)
     ax.plot(time, speed, color="black", lw=1)
-    ax.axhline(MOVEMENT_THRESHOLD, color="red", ls="--", lw=1, alpha=0.5)
+    ax.axhline(3 * SUBJECT_MOVEMENT_THRESHOLDS[session.subject_ID], color="red", ls="--", lw=1, alpha=0.5)
     ax.axvline(moved_start, color="green", ls="--", lw=1, alpha=0.5)
     ax.axvline(moved_goal, color="gold", ls="--", lw=1, alpha=0.5)
