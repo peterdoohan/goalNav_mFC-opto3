@@ -69,6 +69,9 @@ def get_navigation_strategy_weights(sessions, stim_on=False):
     }
 
 
+# refactor
+
+
 def get_neg_loglikelihood(weights, sessions, stim_on=False, remove_post_max_stim_dur=True):
     """
     Calculates the negative log likelihood of the data given the vector_navigation, structure_navigation and penalty_weights.
