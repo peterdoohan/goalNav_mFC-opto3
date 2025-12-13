@@ -3,12 +3,18 @@ lib for plotting trial tajectoies for QC and for vis effect of opto
 """
 
 # %% Imports
-from networkx import shortest_path
+from turtle import up
 import numpy as np
 import pandas as pd
 import networkx as nx
 from matplotlib import pyplot as plt
 from scipy.ndimage import gaussian_filter1d
+from scipy.signal import savgol_filter
+from scipy.interpolate import interp1d
+from scipy.interpolate import splprep, splev
+
+from matplotlib.collections import LineCollection
+from matplotlib.colors import Normalize
 
 from GridMaze.maze import representations as mr
 from GridMaze.maze import plotting as mp
@@ -19,6 +25,86 @@ from matplotlib.patches import Wedge, FancyArrowPatch
 # %% Global Variables
 
 FRMAE_RATE = 60
+
+# %%
+
+
+def plot_fancy_trial_trajectory(
+    session,
+    trial=1,
+    smooth_SD=10,
+    t_range=None,
+    ax=None,
+):
+    """ """
+    # set up plot
+    if ax is None:
+        f, ax = plt.subplots(figsize=(3, 3))
+    # load data
+    navigation_df = session.navigation_df
+    simple_maze = session.simple_maze()
+    # filter data for specified trial
+    df = navigation_df[navigation_df.trial == trial]
+    df = df[df.trial_phase == "navigation"]
+    # extract trajectory
+    x_traj = df.centroid_position.x.values
+    y_traj = df.centroid_position.y.values
+    stim_trial = df.stim_on.any()
+    stim_mask = df.stim_on.values if stim_trial else np.zeros(len(df)).astype(bool)
+    time = df.time.values
+    time = time - time.min()
+    if t_range is not None:
+        t_mask = (time >= t_range[0]) & (time <= t_range[1])
+        x_traj = x_traj[t_mask]
+        y_traj = y_traj[t_mask]
+        time = time[t_mask]
+        stim_mask = stim_mask[t_mask]
+    if smooth_SD:
+        x_traj = gaussian_filter1d(x_traj, smooth_SD)
+        y_traj = gaussian_filter1d(y_traj, smooth_SD)
+    goal = df.goal.unique()[0]
+    color2loc = {}
+    color2loc[goal] = "gold"
+    mp.plot_simple_maze_silhouette(
+        simple_maze,
+        ax=ax,
+        color="silver",
+        special_location2color=color2loc,
+        node_size=175,
+        edge_size=6.5,
+    )
+    if stim_mask.any():
+        ax.plot(
+            x_traj[stim_mask],
+            y_traj[stim_mask],
+            color="#0077FF",
+            linewidth=8,
+            alpha=0.4,
+        )
+
+    # Create line segments from x, y
+    points = np.column_stack([x_traj, y_traj]).reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+    # Normalize time for colormap
+    norm = Normalize(time.min(), time.max())
+
+    # Create LineCollection
+    lc = LineCollection(segments, cmap="Reds", norm=norm)
+    lc.set_array(time[:-1])  # one value per segment
+    lc.set_linewidth(3)
+    lc.set_antialiased(True)
+    lc.set_capstyle("round")
+    lc.set_joinstyle("bevel")
+
+    # Plot
+    ax.add_collection(lc)
+    if t_range is not None:
+        ax.set_title(f"Trial {trial} (t={t_range[0]}-{t_range[1]}s)", fontsize=8)
+    else:
+        ax.set_title(f"Trial {trial}", fontsize=8)
+    return
+
 
 # %%
 
