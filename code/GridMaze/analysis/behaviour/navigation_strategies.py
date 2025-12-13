@@ -6,16 +6,13 @@ And visualizes the results.
 # %% Imports
 import sys
 import json
-from cv2 import exp
-from matplotlib import legend
-from regex import W
 from tqdm import tqdm
 import numpy as np
 from pathlib import Path
 from datetime import date
 import pandas as pd
 from scipy.optimize import minimize
-from ..core import get_sessions as gs
+from GridMaze.analysis.core import get_sessions as gs
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import ttest_rel, ttest_1samp
@@ -31,7 +28,6 @@ from GridMaze.paths import EXPERIMENT_INFO_PATH
 INVALID_TRANSITION = -100
 LOG_MAX_FLOAT = np.log(sys.float_info.max / 2.1)
 
-EXPERIMENT_INFO_PATH = Path("../data/experiment_info")
 
 with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
     SUBJECT_IDS = json.load(infile)
@@ -39,233 +35,9 @@ with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
 SUBJECT_INFO = pd.read_csv(EXPERIMENT_INFO_PATH / "subject_info_df.htsv", sep="\t")
 
 MAX_STIM_DURATION = 30  # seconds
-
-TOTAL_DAYS = 21
-
-STIM_START_DAY = 10
-
 # %%
 
-
-def get_nsm_weights_across_groups():
-    results = []
-    for subject in SUBJECT_IDS:
-        sessions = gs.get_maze_sessions(
-            subject_IDs=[subject],
-            stim_only=True,
-            with_data=["navigation_strategies_df"],
-            must_have_data=True,
-            verbose=True,
-        )
-        for stim in [True, False]:
-            ms_weights = get_navigation_strategy_weights(sessions, stim_on=stim)
-            ms_weights["subject_ID"] = subject
-            ms_weights["condition"] = SUBJECT_INFO[SUBJECT_INFO.subject_ID == subject].condition.values[0]
-            ms_weights["stim_on"] = stim
-            results.append(ms_weights)
-    results_df = pd.DataFrame(results)
-    return results_df
-
-
-def plot_weights_across_groups(df):
-    metrics = ["weight_vector", "weight_structure", "weight_penalty"]
-    conditions = ["opto", "control"]
-    x_pos = {c: i for i, c in enumerate(conditions)}
-
-    # fixed style settings
-    color_off = "black"
-    color_on = "#0077FF"  # electric blue
-    grey = "lightgrey"
-    subj_pt_size = 2
-    mean_pt_size = 8
-
-    fig, axes = plt.subplots(1, len(metrics), figsize=(5, 3))
-
-    for ax, metric in zip(axes, metrics):
-        ax.spines[["top", "right"]].set_visible(False)
-        ax.set_xticks([x_pos[c] for c in conditions])
-        ax.set_xticklabels(conditions)
-        ax.set_title(metric)
-        ax.set_xlim(-0.4, len(conditions) - 0.6)
-
-        ymax = df[metric].max() * 1.2
-        ax.set_ylim(0, ymax)
-
-        # plot subject-level paired points
-        for cond in conditions:
-            subdf = df[df["condition"] == cond]
-            for subj, sdf in subdf.groupby("subject_ID"):
-                sdf = sdf.sort_values("stim_on")
-                x_off = x_pos[cond] - 0.20
-                x_on = x_pos[cond] + 0.20
-                y_off = sdf[sdf["stim_on"] == False][metric].iloc[0]
-                y_on = sdf[sdf["stim_on"] == True][metric].iloc[0]
-                ax.plot([x_off, x_on], [y_off, y_on], "-", color=grey, lw=1.5, alpha=0.8)
-                # ax.plot(x_off, y_off, "o", color=grey, ms=subj_pt_size)
-                # ax.plot(x_on, y_on, "o", color=grey, ms=subj_pt_size)
-
-        # plot mean ± SEM
-        for stim_val, col in [(False, color_off), (True, color_on)]:
-            for cond in conditions:
-                vals = (
-                    df[(df["condition"] == cond) & (df["stim_on"] == stim_val)]
-                    .groupby("subject_ID")[metric]
-                    .first()
-                    .dropna()
-                    .values
-                )
-                if len(vals) > 0:
-                    mean = vals.mean()
-                    sem = stats.sem(vals)
-                    x = x_pos[cond] - 0.20 if not stim_val else x_pos[cond] + 0.20
-                    ax.errorbar(x, mean, yerr=sem, fmt="o", color=col, ms=mean_pt_size, capsize=0, elinewidth=3)
-
-        # paired t-tests (False vs True) within each condition, annotate p-values
-        for cond in conditions:
-            group = df[df["condition"] == cond]
-            # find subjects with both stim states
-            subs = group["subject_ID"].unique()
-            paired_off = []
-            paired_on = []
-            for s in subs:
-                svals = group[group["subject_ID"] == s]
-                if ((svals["stim_on"] == False).any()) and ((svals["stim_on"] == True).any()):
-                    v_off = svals[svals["stim_on"] == False][metric].iloc[0]
-                    v_on = svals[svals["stim_on"] == True][metric].iloc[0]
-                    paired_off.append(v_off)
-                    paired_on.append(v_on)
-            tstat, pval = stats.ttest_rel(paired_on, paired_off, nan_policy="omit")
-            p_text = "p=" + "{:.2g}".format(pval)
-            xpos = x_pos[cond]
-            ax.text(xpos, ymax * 0.9, p_text, ha="center", va="bottom", fontsize=6)
-
-    # simple legend (means only)
-    legend_handles = [
-        Line2D([0], [0], marker="o", color="w", markerfacecolor=color_off, label="stim_off", markersize=9),
-        Line2D([0], [0], marker="o", color="w", markerfacecolor=color_on, label="stim_on", markersize=9),
-    ]
-    axes[2].legend(handles=legend_handles, frameon=False, fontsize="small", loc="lower left")
-
-    # shared labels
-    fig.text(0.5, 0.02, "condition", ha="center", fontsize=13)
-    fig.text(0.03, 0.5, "weight", va="center", rotation="vertical", fontsize=13)
-
-    fig.tight_layout(rect=[0.05, 0.05, 1, 0.95])
-    return fig, axes
-
-
 # %%
-
-
-def plot2(results_df, axes=None):
-    if axes is None:
-        f, axes = plt.subplots(1, 3, figsize=(6, 3))
-    for ax in axes:
-        ax.spines[["top", "right"]].set_visible(False)
-    for w, ax in zip(
-        ["weight_vector", "weight_structure", "weight_penalty"],
-        axes,
-    ):
-        legend = True if w == "weight_penalty" else False
-        sns.stripplot(
-            data=results_df,
-            x="condition",
-            y=w,
-            hue="stim_on",
-            dodge=True,
-            jitter=False,
-            alpha=0.5,
-            legend=False,
-            ax=ax,
-        )
-        # mean ± SEM
-        sns.pointplot(
-            data=results_df,
-            x="condition",
-            y=w,
-            hue="stim_on",
-            dodge=0.2,
-            linestyle="none",
-            errorbar="se",
-            legend=legend,
-            ax=ax,
-        )
-        if legend:
-            ax.legend(fontsize="xx-small")
-            ax.legend(title="stim_on")
-        ax.set_ylabel(w)
-    f.tight_layout()
-    return
-
-
-def test2(ignore_first_n_stim_sessions=False):
-    days = (
-        range(STIM_START_DAY + ignore_first_n_stim_sessions, TOTAL_DAYS + 1) if ignore_first_n_stim_sessions else "all"
-    )
-    results = []
-    for subject in SUBJECT_IDS:
-        sessions = gs.get_maze_sessions(
-            subject_IDs=[subject],
-            stim_only=True,
-            experimental_days=days,
-            with_data=["navigation_strategies_df"],
-            must_have_data=True,
-            verbose=True,
-        )
-        for stim in [True, False]:
-            ms_weights = get_navigation_strategy_weights(sessions, stim_on=stim)
-            ms_weights["subject_ID"] = subject
-            ms_weights["condition"] = SUBJECT_INFO[SUBJECT_INFO.subject_ID == subject].condition.values[0]
-            ms_weights["stim_on"] = stim
-            results.append(ms_weights)
-    results_df = pd.DataFrame(results)
-    return results_df
-
-
-# %%
-
-
-def plot1(results_df, axes=None):
-    f, axes = plt.subplots(3, 1, figsize=(5, 6))
-    for ax in axes:
-        ax.spines[["top", "right"]].set_visible(False)
-        ax.axvline(STIM_START_DAY - 0.5, color="cyan", linestyle="--", alpha=0.5)
-    for w, ax in zip(
-        ["weight_vector", "weight_structure", "weight_penalty"],
-        axes,
-    ):
-        legend = True if w == "weight_penalty" else False
-        for cond in ["control", "opto"]:
-            subset = results_df[results_df["condition"] == cond]
-            sns.lineplot(
-                x="day",
-                y=w,
-                data=subset,
-                ax=ax,
-                label=cond,
-                alpha=0.7,
-                legend=legend,
-            )
-    return
-
-
-def test():
-    results = []
-    for cond in ["control", "opto"]:
-        for day in range(1, TOTAL_DAYS + 1):
-            sessions = gs.get_maze_sessions(
-                conditions=[cond],
-                experimental_days=[day],
-                with_data=["navigation_strategies_df"],
-                must_have_data=True,
-                verbose=False,
-            )
-            ms_weights = get_navigation_strategy_weights(sessions, stim_on=None)
-            ms_weights["day"] = day
-            ms_weights["condition"] = cond
-            results.append(ms_weights)
-    results_df = pd.DataFrame(results)
-    return results_df
 
 
 # %% Modelling functions
