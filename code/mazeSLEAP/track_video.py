@@ -88,7 +88,9 @@ def get_sleap_SLURM_script(video_info, RAM="32GB", time_limit="24:00:00"):
 #SBATCH --cpus-per-task=8
 #SBATCH -p gpu
 #SBATCH --gres=gpu
+#SBATCH --exclude=gpu-sr670-21
 #SBATCH --exclude=gpu-sr670-22
+#SBATCH --exclude=gpu-380-10
 #SBATCH --mem={RAM}
 #SBATCH --time={time_limit}
 

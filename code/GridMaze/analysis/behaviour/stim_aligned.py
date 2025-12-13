@@ -4,34 +4,40 @@ Behaviouoral analysis aligned to stim onset.
 """
 
 # %% Imports
+import json
 import pandas as pd
 import networkx as nx
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import sem, zscore
-from ..core import get_sessions as gs
+from GridMaze.analysis.core import get_sessions as gs
 from scipy.ndimage import gaussian_filter1d
 
 # %% Global Variables
-EXPERIMENT_INFO_PATH = Path("../data/experiment_info")
+from GridMaze.paths import EXPERIMENT_INFO_PATH
 
-SUBJECT_INFO = pd.read_csv(EXPERIMENT_INFO_PATH / "subject_info_df.htsv", sep="\t")
+with open(EXPERIMENT_INFO_PATH / "subject_info_df.htsv", "r") as infile:
+    SUBJECT_INFO = pd.read_csv(infile, sep="\t")
+
+with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as infile:
+    SUBJECT_IDS = json.load(infile)
 
 FRAME_RATE = 60  # Hz
 
 # %% Speed
 
 
-def get_stim_aligned_speed(group="opto", window=(-1, 2)):
+def get_stim_aligned_speed(condition="opto", window=(-1, 2)):
     """"""
-    valid_subjects = SUBJECT_INFO[
-        (SUBJECT_INFO.condition == group) & (SUBJECT_INFO.included_in_full_trial_stim)
-    ].subject_ID
+    subject_IDs = SUBJECT_INFO[SUBJECT_INFO.condition == condition].subject_ID.values
     stim_aligned_speeds = []
-    for subject in valid_subjects:
-        sessions = gs.get_sessions(
-            experiment_phases="full_trial_stim", subject_IDs=[subject], with_data=["navigation_df", "trials_df"]
+    for subject in subject_IDs:
+        sessions = gs.get_maze_sessions(
+            subject_IDs=[subject],
+            experiment_phases="expert",
+            stim_only=True,
+            with_data=["navigation_df", "trials_df"],
         )
         speeds = _get_stim_aligned_speed(sessions, window=window)
         stim_aligned_speeds.append(np.mean(speeds, axis=0))
@@ -44,7 +50,7 @@ def get_stim_aligned_speed(group="opto", window=(-1, 2)):
     aligned_time = np.linspace(window[0], window[1], len(av_speed))
     ax.plot(aligned_time, av_speed)
     ax.fill_between(aligned_time, av_speed - sem_speeds, av_speed + sem_speeds, alpha=0.5)
-    for i in range(len(valid_subjects)):
+    for i in range(len(subject_IDs)):
         ax.plot(aligned_time, stim_aligned_speeds[i], alpha=0.1, color="black")
     ax.axvline(0, color="black", linestyle="--")
     return stim_aligned_speeds
@@ -60,10 +66,11 @@ def _get_stim_aligned_speed(sessions, window=(0, 2)):
     window = np.multiply(window, FRAME_RATE)
     speeds = []
     for session in sessions:
+        trials_df = session.trials_df
+        stim_trials = trials_df[trials_df.stim_trial].trial.values
         navigation_df = session.navigation_df
         speed = navigation_df.speed
-        trials = _get_trials(session, stim=True)
-        for t in trials:
+        for t in stim_trials:
             trial_df = navigation_df[navigation_df.trial == t]
             stim_onset_frame = trial_df[trial_df.stim_on].index[0]
             start_frame = stim_onset_frame + window[0] + 1
