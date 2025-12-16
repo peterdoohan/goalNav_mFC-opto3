@@ -5,16 +5,19 @@ quantifty excess steps between stim conditions across groups
 
 # %% Imports
 import json
-from click import group
 import numpy as np
 import pandas as pd
 import networkx as nx
-from matplotlib import pyplot as plt
 import seaborn as sns
+from joblib import Parallel, delayed
 from pingouin import mixed_anova
-from scipy.ndimage import gaussian_filter1d
+from matplotlib import pyplot as plt
+import statsmodels.formula.api as smf
+from scipy.stats import zscore, norm
+from patsy import build_design_matrices
 
 from GridMaze.maze import representations as mr
+from GridMaze.maze import plotting as mp
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.behaviour import trajectory_plotting as tp
 from scipy.spatial.distance import euclidean
@@ -25,7 +28,78 @@ from GridMaze.paths import EXPERIMENT_INFO_PATH
 with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
     SUBJECT_IDS = json.load(f)
 
-# %% distance/difficulty stratified effects
+# %% excess steps by goal
+
+
+def test(
+    excess_steps_df,
+    maze_name="maze_2",
+    stim_day_range=(4, np.inf),
+    outlier_thres=600,
+    highlight_significant=True,
+):
+    """ """
+    # filter data
+    df = excess_steps_df.copy()
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    if outlier_thres is not None:
+        df = df[df.n_excess_steps <= outlier_thres]
+    df = df[df.maze_name == maze_name]
+    # fixed effects for plotting (get av n_excess_steps per condition/goal/stim_trial)
+    goal_xs_steps = df.groupby(["condition", "stim_trial", "goal"]).n_excess_steps.mean().unstack(level=[0, 1])
+    goal_xs_steps = (
+        df.groupby(["subject_ID", "condition", "stim_trial", "goal"])
+        .n_excess_steps.mean()
+        .groupby(["condition", "stim_trial", "goal"])
+        .mean()
+        .unstack([0, 1])
+    )
+    delta_df = pd.DataFrame(index=goal_xs_steps.index, columns=["control", "opto"])
+    delta_df["control"] = goal_xs_steps[("control", True)] - goal_xs_steps[("control", False)]
+    delta_df["opto"] = goal_xs_steps[("opto", True)] - goal_xs_steps[("opto", False)]
+    delta_delta = delta_df.opto - delta_df.control
+
+    # random effects for stats
+    df["zscore_excess_steps"] = zscore(df["n_excess_steps"])
+
+    # Fit mixed model
+    md = smf.mixedlm(
+        "zscore_excess_steps ~ condition * stim_trial * goal", df, groups=df["subject_ID"], re_formula="~stim_trial"
+    )
+    # md = smf.mixedlm(  # need to check model, is using some werid contrast thing...
+    #     "zscore_excess_steps ~ condition * stim_trial * C(goal, Sum())",
+    #     df,
+    #     groups=df["subject_ID"],
+    #     re_formula="~stim_trial",
+    # )
+    res = md.fit(reml=False, method="lbfgs", maxiter=10_000)
+    goals = goal_xs_steps.index.values
+    goal2p_val = {}
+    pvals = res.pvalues
+    for goal in goals:
+        try:
+            # goal2p_val[goal] = pvals.loc[f"condition[T.opto]:stim_trial[T.True]:C(goal, Sum())[S.{goal}]"]
+            goal2p_val[goal] = pvals.loc[f"condition[T.opto]:stim_trial[T.True]:goal[T.{goal}]"]
+
+        except KeyError:
+            pass
+    if highlight_significant:
+        highlight_nodes = [goal for goal, p in goal2p_val.items() if p < 0.05]
+    else:
+        highlight_nodes = False
+    f, ax = plt.subplots(1, 1, figsize=(5, 5))
+    simple_maze = mr.get_simple_maze(maze_name)
+    mp.plot_simple_heatmap(
+        simple_maze,
+        delta_delta,
+        colormap="viridis",
+        highlight_nodes=highlight_nodes,
+        highlight_color="red",
+        ax=ax,
+    )
+
+    return res
 
 
 # %% Early stim effects
@@ -35,7 +109,7 @@ def plot_stim_effects_over_days(
     excess_steps_df,
     groups=["control", "opto"],
     stim_day_range=None,
-    outlier_thres=200,
+    outlier_thres=500,
     ignore_low_laser_power_sessions=False,
     steps_as_nodes=True,
     rolling_avg=2,
@@ -100,8 +174,8 @@ def plot_stim_effects_over_days(
 
 def plot_random_effects_summary(
     excess_steps_df,
-    stim_day_range=(4, np.inf),
-    outlier_thres=250,
+    stim_day_range=(8, np.inf),
+    outlier_thres=500,
     starting_dist_range=None,
     ignore_low_laser_power_sessions=False,
     ignore_first_trial_after_stim=False,
@@ -208,6 +282,7 @@ def get_excess_steps_df(
     first_goal_sight=True,
     goal_sight_kwargs={"alpha_deg": 160, "smooth_SD": 4, "min_consecutive": 0.4},
     verbose=True,
+    jobs=-1,
 ):
     """ """
     if sessions is None:
@@ -223,16 +298,26 @@ def get_excess_steps_df(
             verbose=True,
         )
     # calc excess steps for each session
-    dfs = []
-    for session in sessions:
-        if verbose:
-            print(session.name)
-        _df = get_session_excess_steps_df(
-            session,
-            first_goal_sight=first_goal_sight,
-            goal_sight_kwargs=goal_sight_kwargs,
+    if jobs:
+        dfs = Parallel(n_jobs=jobs)(
+            delayed(get_session_excess_steps_df)(
+                session,
+                first_goal_sight=first_goal_sight,
+                goal_sight_kwargs=goal_sight_kwargs,
+            )
+            for session in sessions
         )
-        dfs.append(_df)
+    else:
+        dfs = []
+        for session in sessions:
+            if verbose:
+                print(session.name)
+            _df = get_session_excess_steps_df(
+                session,
+                first_goal_sight=first_goal_sight,
+                goal_sight_kwargs=goal_sight_kwargs,
+            )
+            dfs.append(_df)
     excess_steps_df = pd.concat(dfs, ignore_index=True)
     return excess_steps_df
 
@@ -295,10 +380,12 @@ def get_session_excess_steps_df(
                 "subject_ID": session.subject_ID,
                 "condition": session.condition,
                 "maze_name": session.maze_name,
+                "maze_order": session.maze_order,
+                "day_on_maze": session.day_on_maze,
                 "stim_day": session.stim_day,
                 "total_stim_days": session.total_stim_days,
-                "day_on_maze": session.day_on_maze,
                 "trial_unique_ID": nav_df.trial_unique_ID.unique()[0],
+                "goal": goal,
                 "stim_trial": trials_df.loc[trial, ("stim_trial", "")],
                 "trials_since_stim": trials_df.loc[trial, ("trials_since_stim", "")],
                 "n_excess_steps": n_excess_steps,

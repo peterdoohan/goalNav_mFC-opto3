@@ -53,6 +53,7 @@ def get_maze_sessions(
     maze_names="all",  # maze_1, maze_2
     days_on_maze="all",
     experiment_phases="all",  # learning, expert
+    total_stim_days="all",
     stim_only=False,
     tethered_only=False,
     experimental_days="all",
@@ -109,6 +110,9 @@ def get_maze_sessions(
                         continue
                 if not experiment_phases == "all":
                     if not session_info["experiment_phase"] in experiment_phases:
+                        continue
+                if not total_stim_days == "all":
+                    if not session_info["total_stim_days"] in total_stim_days:
                         continue
                 session = MazeSession(subject_ID, session_info["date"], with_data)
                 if must_have_data:  # only add sessions that have all requested data

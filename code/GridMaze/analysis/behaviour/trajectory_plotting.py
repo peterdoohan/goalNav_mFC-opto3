@@ -3,7 +3,6 @@ lib for plotting trial tajectoies for QC and for vis effect of opto
 """
 
 # %% Imports
-from turtle import up
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -55,10 +54,8 @@ def plot_fancy_trial_trajectory(
     time = time - time.min()
     if t_range is not None:
         t_mask = (time >= t_range[0]) & (time <= t_range[1])
-        x_traj = x_traj[t_mask]
-        y_traj = y_traj[t_mask]
-        time = time[t_mask]
-        stim_mask = stim_mask[t_mask]
+    else:
+        t_mask = np.ones(len(time)).astype(bool)
     if smooth_SD:
         x_traj = gaussian_filter1d(x_traj, smooth_SD)
         y_traj = gaussian_filter1d(y_traj, smooth_SD)
@@ -75,8 +72,8 @@ def plot_fancy_trial_trajectory(
     )
     if stim_mask.any():
         ax.plot(
-            x_traj[stim_mask],
-            y_traj[stim_mask],
+            x_traj[t_mask][stim_mask[t_mask]],
+            y_traj[t_mask][stim_mask[t_mask]],
             color="#0077FF",
             linewidth=8,
             alpha=0.4,
@@ -85,13 +82,14 @@ def plot_fancy_trial_trajectory(
     # Create line segments from x, y
     points = np.column_stack([x_traj, y_traj]).reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    segments = segments[t_mask[:-1]]
 
     # Normalize time for colormap
     norm = Normalize(time.min(), time.max())
 
     # Create LineCollection
     lc = LineCollection(segments, cmap="Reds", norm=norm)
-    lc.set_array(time[:-1])  # one value per segment
+    lc.set_array(time[t_mask][:-1])  # one value per segment
     lc.set_linewidth(3)
     lc.set_antialiased(True)
     lc.set_capstyle("round")
