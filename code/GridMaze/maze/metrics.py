@@ -62,8 +62,19 @@ def get_mean_distance_decorrelation(simple_maze, with_edges=False):
     SPD = dict(nx.all_pairs_shortest_path_length(graph))
     coord2label = mr.get_maze_coord2label(simple_maze)
     label2position = mr.get_maze_label2position(simple_maze)
+    label2decorr = {}
+    for cord, d_dict in SPD.items():
+        label = coord2label[cord]
+        pos = label2position[label]
+        eds, gds = [], []
+        for cord2, gd in d_dict.items():
+            label2 = coord2label[cord2]
+            pos2 = label2position[label2]
+            eds.append(euclidean(pos, pos2))
+            gds.append(gd)
+        label2decorr[label] = 1 - np.corrcoef(eds, gds)[0, 1]
 
-    return  # need to fin
+    return label2decorr
 
 
 def get_node_degree(simple_maze, with_edges=False):

@@ -63,12 +63,14 @@ def plot_simple_heatmap(
     place_values,
     ax=None,
     colormap="plasma",
-    title="Simple Maze Heatmap",
+    title=None,
     value_label="Value Label",
     highlight_nodes=False,
     highlight_color="deepskyblue",
     node_size=450,
     edge_size=10,
+    vmin=None,
+    vmax=None,
     allow_negative=False,
 ):
     """Plots a heatmap of the simple maze.
@@ -86,8 +88,10 @@ def plot_simple_heatmap(
     label2coord = mr.get_maze_label2coord(simple_maze)
     place_vals = place_values.copy()
     place_vals.index = place_values.index.map(label2coord).to_flat_index()
-    vmax = place_values.max()
-    vmin = 0 if not allow_negative else place_values.min()
+    if vmax is None:
+        vmax = place_values.max()
+    if vmin is None:
+        vmin = 0 if not allow_negative else place_values.min()
     node2color = {node: value2hex(place_vals[node], vmin, vmax, colormap=colormap) for node in simple_maze.nodes}
     edge2color = {edge: value2hex(place_vals[edge], vmin, vmax, colormap=colormap) for edge in simple_maze.edges}
     if not highlight_nodes:
@@ -103,7 +107,8 @@ def plot_simple_heatmap(
     # plotting
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-    ax.set_title(title, fontdict={"family": "Courier", "size": 10}, loc="left", pad=-5, x=0.05)
+    if title is not None:
+        ax.set_title(title, loc="left", pad=-5, x=0.05)
     ax.set_facecolor("none")
     ax.set_aspect("equal")
     ax.axis("off")
@@ -120,7 +125,7 @@ def plot_simple_heatmap(
         width=edge_size,
         with_labels=False,
     )
-    if value_label:
+    if value_label is not None:
         divider = make_axes_locatable(ax)
         cax = divider.append_axes("right", size="5%", pad=0.05)
         cax.set_ylim(ax.get_ylim())

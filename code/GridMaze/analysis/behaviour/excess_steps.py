@@ -17,6 +17,7 @@ from scipy.stats import zscore, norm
 from patsy import build_design_matrices
 
 from GridMaze.maze import representations as mr
+from GridMaze.maze import metrics as mm
 from GridMaze.maze import plotting as mp
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.behaviour import trajectory_plotting as tp
@@ -33,10 +34,77 @@ with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
 
 def test(
     excess_steps_df,
+    stim_day_range=(4, np.inf),
+    outlier_thres=500,
+    var="betweenness_centrality",
+    zscore_var=False,
+):
+    """ """
+    # filter data
+    df = excess_steps_df.copy()
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    if outlier_thres is not None:
+        df = df[df.n_excess_steps <= outlier_thres]
+
+    if var in ["start_euclidean_dist", "start_geodesic_dist", "start_dist_ratio"]:
+        if var == "start_dist_ratio":
+            v = df["start_geodesic_dist"] - df["start_euclidean_dist"]
+        else:
+            v = df[var]  # already computed
+
+    else:
+        # calculate var per trial
+        maze_1 = mr.get_simple_maze("maze_1")
+        maze_2 = mr.get_simple_maze("maze_2")
+        if var == "betweenness_centrality":
+            maze_1_dict = mm.get_betweeness_centrality(maze_1)
+            maze_2_dict = mm.get_betweeness_centrality(maze_2)
+        elif var == "mean_geodesic_distance":
+            maze_1_dict = mm.get_mean_shortest_path_distance(maze_1)
+            maze_2_dict = mm.get_mean_shortest_path_distance(maze_2)
+        elif var == "node_degree":
+            maze_1_dict = mm.get_node_degree(maze_1)
+            maze_2_dict = mm.get_node_degree(maze_2)
+        elif var == "mean_distance_decorrelation":
+            maze_1_dict = mm.get_mean_distance_decorrelation(maze_1)
+            maze_2_dict = mm.get_mean_distance_decorrelation(maze_2)
+        else:
+            raise NotImplementedError
+
+        def _map_var(row):
+            if row.maze_name == "maze_1":
+                return maze_1_dict[row.goal]
+            elif row.maze_name == "maze_2":
+                return maze_2_dict[row.goal]
+
+        v = df.apply(_map_var, axis=1)
+
+    if zscore_var:
+        v = zscore(v)
+    df[var] = v
+
+    # fit linear mixed effects model
+    md = smf.mixedlm(
+        f"n_excess_steps ~ condition * stim_trial * {var}", df, groups=df["subject_ID"], re_formula="~stim_trial"
+    )
+    res = md.fit(reml=False, method="lbfgs", maxiter=10_000)
+
+    return res.summary()
+
+
+def _get_mean_geodesic_distance(row):
+    return
+
+
+def plot_delta_delta_excess_steps_across_goals(
+    excess_steps_df,
     maze_name="maze_2",
     stim_day_range=(4, np.inf),
-    outlier_thres=600,
+    outlier_thres=500,
     highlight_significant=True,
+    vmax=5,
+    ax=None,
 ):
     """ """
     # filter data
@@ -46,60 +114,54 @@ def test(
     if outlier_thres is not None:
         df = df[df.n_excess_steps <= outlier_thres]
     df = df[df.maze_name == maze_name]
-    # fixed effects for plotting (get av n_excess_steps per condition/goal/stim_trial)
-    goal_xs_steps = df.groupby(["condition", "stim_trial", "goal"]).n_excess_steps.mean().unstack(level=[0, 1])
-    goal_xs_steps = (
-        df.groupby(["subject_ID", "condition", "stim_trial", "goal"])
+    # get delta (light on - light off) per goal per subject
+    # then average this delta across subjects in each condition (opto/control)
+    delta_df = (
+        df.groupby(["subject_ID", "condition", "goal", "stim_trial"])
         .n_excess_steps.mean()
-        .groupby(["condition", "stim_trial", "goal"])
+        .unstack(level=-1)
+        .diff(axis=1)[True]
+        .groupby(level=[1, 2])
         .mean()
-        .unstack([0, 1])
+        .unstack(level=0)
     )
-    delta_df = pd.DataFrame(index=goal_xs_steps.index, columns=["control", "opto"])
-    delta_df["control"] = goal_xs_steps[("control", True)] - goal_xs_steps[("control", False)]
-    delta_df["opto"] = goal_xs_steps[("opto", True)] - goal_xs_steps[("opto", False)]
-    delta_delta = delta_df.opto - delta_df.control
-
-    # random effects for stats
-    df["zscore_excess_steps"] = zscore(df["n_excess_steps"])
-
-    # Fit mixed model
-    md = smf.mixedlm(
-        "zscore_excess_steps ~ condition * stim_trial * goal", df, groups=df["subject_ID"], re_formula="~stim_trial"
-    )
-    # md = smf.mixedlm(  # need to check model, is using some werid contrast thing...
-    #     "zscore_excess_steps ~ condition * stim_trial * C(goal, Sum())",
-    #     df,
-    #     groups=df["subject_ID"],
-    #     re_formula="~stim_trial",
-    # )
-    res = md.fit(reml=False, method="lbfgs", maxiter=10_000)
-    goals = goal_xs_steps.index.values
-    goal2p_val = {}
-    pvals = res.pvalues
-    for goal in goals:
-        try:
-            # goal2p_val[goal] = pvals.loc[f"condition[T.opto]:stim_trial[T.True]:C(goal, Sum())[S.{goal}]"]
-            goal2p_val[goal] = pvals.loc[f"condition[T.opto]:stim_trial[T.True]:goal[T.{goal}]"]
-
-        except KeyError:
-            pass
+    delta_delta_df = delta_df[("opto")] - delta_df[("control")]
+    # stats (no exaclty correct, just placeholder approx.)
     if highlight_significant:
+        # Fit mixed model (with subject random effects)
+        md = smf.mixedlm(
+            "n_excess_steps ~ condition * stim_trial * goal", df, groups=df["subject_ID"], re_formula="~stim_trial"
+        )
+        res = md.fit(reml=False, method="lbfgs", maxiter=10_000)
+        goal2p_val = {}
+        pvals = res.pvalues
+        for goal in df.goal.unique():
+            try:
+                goal2p_val[goal] = pvals.loc[f"condition[T.opto]:stim_trial[T.True]:goal[T.{goal}]"]
+            except KeyError:
+                pass
         highlight_nodes = [goal for goal, p in goal2p_val.items() if p < 0.05]
     else:
         highlight_nodes = False
-    f, ax = plt.subplots(1, 1, figsize=(5, 5))
+
+    # plotting
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(3, 3))
     simple_maze = mr.get_simple_maze(maze_name)
+    edges = [l for l in mr.get_maze_locations(simple_maze) if "-" in l]  # add edge values as 0 for plotting
     mp.plot_simple_heatmap(
         simple_maze,
-        delta_delta,
-        colormap="viridis",
+        pd.concat([delta_delta_df, pd.Series(0, index=edges)]),
+        colormap="mako",
         highlight_nodes=highlight_nodes,
-        highlight_color="red",
+        value_label="ΔΔ excess steps",
+        highlight_color="magenta",
+        node_size=175,
+        edge_size=6.5,
+        vmin=0,
+        vmax=vmax,
         ax=ax,
     )
-
-    return res
 
 
 # %% Early stim effects
