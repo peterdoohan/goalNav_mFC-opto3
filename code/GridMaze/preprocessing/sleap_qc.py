@@ -39,8 +39,7 @@ def save_session_trajectory_qc_plots(subject_ID=None, date=None, bodypart="head_
             )
             continue
         tracking_df = fd.get_tracking_df(session_dir)
-        _tracking = tracking_df[bodypart]
-        x, y = _tracking.x.values, _tracking.y.values
+        x, y = tracking_df.x.values, tracking_df.y.values
         simple_maze = mr.get_simple_maze(session_dir.maze_name)
         plot_session_trajectory(
             simple_maze, x, y, session_dir.subject_ID, session_dir.date, save=save, overwrite=overwrite

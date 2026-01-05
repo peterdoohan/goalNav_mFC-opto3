@@ -234,6 +234,9 @@ SESSION_NOTES = [
     {"subject_ID": "mFC-opto_36", "date": "2025-11-23", "notes": ["laser power low"]},
     {"subject_ID": "mFC-opto_37", "date": "2025-11-23", "notes": ["laser power low"]},
     {"subject_ID": "mFC-opto_38", "date": "2025-11-23", "notes": ["laser power low"]},
+    {"subject_ID": "mFC-opto_31", "date": "2025-12-09", "notes": ["badly connected bridge"]},
+    {"subject_ID": "mFC-opto_32", "date": "2025-12-09", "notes": ["badly connected bridge"]},
+    {"subject_ID": "mFC-opto_34", "date": "2025-12-09", "notes": ["badly connected bridge"]},
 ]
 
 # %%
