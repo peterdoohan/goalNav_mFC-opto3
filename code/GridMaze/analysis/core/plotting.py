@@ -15,7 +15,7 @@ from pingouin import mixed_anova
 # %% Functions
 
 
-def _plot_group_by_stim(df, y, ax=None, print_stats=False):
+def plot_group_by_stim(df, y, ax=None, stim_color="#0077FF", print_stats=False):
     """ """
     # set up fig
     if ax is None:
@@ -27,7 +27,7 @@ def _plot_group_by_stim(df, y, ax=None, print_stats=False):
     ax.set_xticklabels(conditions)
     ax.set_xlim(-0.4, len(conditions) - 0.6)
     ax.set_ylim(df[y].min() * 0.8, df[y].max() * 1.1)
-    condition2color = {"control": "black", "opto": "#0077FF"}
+    condition2color = {"control": "black", "opto": stim_color}
 
     # plot subject-level paired points
     for cond in conditions:
@@ -65,10 +65,24 @@ def _plot_group_by_stim(df, y, ax=None, print_stats=False):
     ax.set_ylabel(y)
     if print_stats:
         stats_df = mixed_anova(
-            dv=y,
+            dv="n_excess_steps",
             within="stim_trial",
             between="condition",
             subject="subject_ID",
             data=df,
+        )
+        # extract and display relevant stats
+        cond = stats_df.loc[stats_df["Source"] == "condition"].iloc[0]
+        stim = stats_df.loc[stats_df["Source"] == "stim_trial"].iloc[0]
+        inter = stats_df.loc[stats_df["Source"] == "Interaction"].iloc[0]
+        textstr = (
+            f"Group: p={cond['p-unc']:.3f}\n" f"Stim  : p={stim['p-unc']:.3f}\n" f"Int     : p={inter['p-unc']:.3f}\n"
+        )
+        ax.text(
+            0.05,
+            0.80,
+            textstr,
+            transform=ax.transAxes,
+            fontsize=8,
         )
         print(stats_df)

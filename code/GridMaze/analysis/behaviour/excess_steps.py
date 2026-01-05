@@ -14,12 +14,12 @@ from pingouin import mixed_anova
 from matplotlib import pyplot as plt
 import statsmodels.formula.api as smf
 from scipy.stats import zscore, norm
-from patsy import build_design_matrices
 
 from GridMaze.maze import representations as mr
 from GridMaze.maze import metrics as mm
 from GridMaze.maze import plotting as mp
 from GridMaze.analysis.core import get_sessions as gs
+from GridMaze.analysis.core import plotting as cp
 from GridMaze.analysis.behaviour import trajectory_plotting as tp
 from scipy.spatial.distance import euclidean
 
@@ -172,7 +172,7 @@ def plot_stim_effects_over_days(
     groups=["control", "opto"],
     stim_day_range=None,
     outlier_thres=500,
-    ignore_low_laser_power_sessions=False,
+    ignore_sessions_with_issues_noted=False,
     steps_as_nodes=True,
     rolling_avg=2,
     ax=None,
@@ -191,8 +191,8 @@ def plot_stim_effects_over_days(
         _df["n_excess_steps"] = _df["n_excess_steps"] / 2  # convert steps to nodes
     if outlier_thres is not None:
         _df = _df[_df.n_excess_steps <= outlier_thres]
-    if ignore_low_laser_power_sessions:
-        _df = _df[~_df.low_laser_power]
+    if ignore_sessions_with_issues_noted:
+        _df = _df[~_df.session_issue_noted]
 
     # average excess steps per subject per day
     df = _df.groupby(["condition", "subject_ID", "stim_trial", "total_stim_days"]).n_excess_steps.mean().reset_index()
@@ -239,7 +239,7 @@ def plot_random_effects_summary(
     stim_day_range=(8, np.inf),
     outlier_thres=500,
     starting_dist_range=None,
-    ignore_low_laser_power_sessions=False,
+    ignore_sessions_with_issues_noted=False,
     ignore_first_trial_after_stim=False,
     steps_as_nodes=True,
     print_stats=True,
@@ -254,86 +254,20 @@ def plot_random_effects_summary(
         _df = _df[_df.n_excess_steps <= outlier_thres]
     if starting_dist_range is not None:
         _df = _df[_df.start_geodesic_dist.between(*starting_dist_range)]
-    if ignore_low_laser_power_sessions:
-        _df = _df[~_df.low_laser_power]
     if ignore_first_trial_after_stim:
         _df = _df[_df.trials_since_stim != 1]
+    if ignore_sessions_with_issues_noted:
+        _df = _df[~_df.session_issue_noted]
 
     # average excess steps per subject over trials
     df = _df.groupby(["condition", "subject_ID", "stim_trial"]).n_excess_steps.mean().reset_index()
     if steps_as_nodes:
         df["n_excess_steps"] = df["n_excess_steps"] / 2  # convert steps to nodes
 
-    # set up fig
-    conditions = ["control", "opto"]
-    x_pos = {cond: i for i, cond in enumerate(conditions)}
-    y_max = df.n_excess_steps.max() * 1.1
+    # plot cross subject mean ± SEM
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(2, 3))
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.set_xticks([x_pos[c] for c in conditions])
-    ax.set_xticklabels(conditions)
-    ax.set_xlim(-0.4, len(conditions) - 0.6)
-    ax.set_ylim(0, y_max)
-    condition2color = {"control": "black", "opto": "#0077FF"}
-
-    # plot subject-level paired points
-    for cond in conditions:
-        cond_df = df[df["condition"] == cond]
-        cond_df = cond_df.set_index(["subject_ID", "stim_trial"]).n_excess_steps.unstack()
-        x_off = x_pos[cond] - 0.30
-        x_on = x_pos[cond] + 0.30
-        for subj, row in cond_df.iterrows():
-            y_off = row[False]
-            y_on = row[True]
-            ax.plot([x_off, x_on], [y_off, y_on], "-", color="lightgrey", lw=1.5, alpha=0.8)
-
-    # plot cross subject mean ± SEM
-    sns.pointplot(
-        data=df,
-        x="condition",
-        y="n_excess_steps",
-        hue="stim_trial",
-        dodge=0.3,
-        linestyle="none",
-        errorbar="se",
-        palette=[condition2color[c] for c in conditions],
-        ax=ax,
-    )
-    sns.move_legend(
-        ax,
-        "lower center",
-        ncol=2,
-        title="light on",
-        frameon=True,
-        fontsize="x-small",
-    )
-    ax.set_xlabel("group")
-    ax.set_ylabel("excess steps")
-
-    if print_stats:
-        stats_df = mixed_anova(
-            dv="n_excess_steps",
-            within="stim_trial",
-            between="condition",
-            subject="subject_ID",
-            data=df,
-        )
-        # extract and display relevant stats
-        cond = stats_df.loc[stats_df["Source"] == "condition"].iloc[0]
-        stim = stats_df.loc[stats_df["Source"] == "stim_trial"].iloc[0]
-        inter = stats_df.loc[stats_df["Source"] == "Interaction"].iloc[0]
-        textstr = (
-            f"Group: p={cond['p-unc']:.3f}\n" f"Stim  : p={stim['p-unc']:.3f}\n" f"Int     : p={inter['p-unc']:.3f}\n"
-        )
-        ax.text(
-            0.05,
-            0.80,
-            textstr,
-            transform=ax.transAxes,
-            fontsize=8,
-        )
-        print(stats_df)
+    cp.plot_group_by_stim(df, y="n_excess_steps", ax=ax, print_stats=print_stats)
 
 
 # %% excess steps functions
@@ -460,10 +394,10 @@ def get_session_excess_steps_df(
     excess_steps_df = pd.DataFrame(results)
 
     # some sessions had low laser power where fiber was partially broken, keep note of this
-    if session.session_notes is not None and "laser power low" in session.session_notes:
-        low_laser_power = True
+    if session.session_notes is not None:
+        issue_noted = True
     else:
-        low_laser_power = False
-    excess_steps_df["low_laser_power"] = low_laser_power
+        issue_noted = False
+    excess_steps_df["session_issue_noted"] = issue_noted
 
     return excess_steps_df
