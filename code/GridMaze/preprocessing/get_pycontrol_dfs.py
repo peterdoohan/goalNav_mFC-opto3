@@ -47,6 +47,9 @@ def get_trials_df(session_dir):
     trials_since_stim = stim_group.groupby(stim_group).cumcount()
     trials_since_stim[stim_trials] = np.nan
     trials_since_stim[stim_group == 0] = np.nan  # before first stim trial
+    # calc consecutive stim trials
+    _groups = (stim_trials != stim_trials.shift()).cumsum()
+    consecutive_stim_trials = stim_trials.groupby(_groups).cumsum().where(stim_trials, np.nan)
     # get stim times
     stim_start_times = [i / 1000 if i is not None else np.nan for i in print_variables_df.stim_start_time]  # seconds
     stim_end_times = [i / 1000 if i is not None else np.nan for i in print_variables_df.stim_end_time]  # seconds
@@ -63,6 +66,7 @@ def get_trials_df(session_dir):
             ("trial", ""): np.arange(1, len(cue_times) + 1),
             ("stim_trial", ""): stim_trials,
             ("trials_since_stim", ""): trials_since_stim,
+            ("consecutive_stim_trials", ""): consecutive_stim_trials,
             ("goal", ""): print_variables_df.current_goal,
             ("errors", ""): _get_errors(session_df, goals, cue_times, reward_times),
             ("time", "stim_start"): stim_start_times,
@@ -77,8 +81,6 @@ def get_trials_df(session_dir):
         }
     )
     trials_df.columns = pd.MultiIndex.from_tuples(trials_df.columns)
-    # add trials since stim column
-
     return trials_df
 
 
