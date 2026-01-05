@@ -65,7 +65,7 @@ def plot_group_by_stim(df, y, ax=None, stim_color="#0077FF", print_stats=False):
     ax.set_ylabel(y)
     if print_stats:
         stats_df = mixed_anova(
-            dv="n_excess_steps",
+            dv=y,
             within="stim_trial",
             between="condition",
             subject="subject_ID",

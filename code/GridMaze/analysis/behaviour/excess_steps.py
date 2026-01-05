@@ -235,7 +235,8 @@ def plot_stim_effects_over_days(
 
 
 def plot_random_effects_summary(
-    excess_steps_df,
+    df,
+    y="n_excess_steps",
     stim_day_range=(8, np.inf),
     outlier_thres=500,
     starting_dist_range=None,
@@ -247,11 +248,11 @@ def plot_random_effects_summary(
 ):
     """ """
     # filter data
-    _df = excess_steps_df.copy()
+    _df = df.copy()
     if stim_day_range is not None:
         _df = _df[_df.total_stim_days.between(*stim_day_range)]
     if outlier_thres is not None:
-        _df = _df[_df.n_excess_steps <= outlier_thres]
+        _df = _df[_df[y] <= outlier_thres]
     if starting_dist_range is not None:
         _df = _df[_df.start_geodesic_dist.between(*starting_dist_range)]
     if ignore_first_trial_after_stim:
@@ -260,20 +261,20 @@ def plot_random_effects_summary(
         _df = _df[~_df.session_issue_noted]
 
     # average excess steps per subject over trials
-    df = _df.groupby(["condition", "subject_ID", "stim_trial"]).n_excess_steps.mean().reset_index()
-    if steps_as_nodes:
+    df = _df.groupby(["condition", "subject_ID", "stim_trial"])[y].mean().reset_index()
+    if y == "n_excess_steps" and steps_as_nodes:
         df["n_excess_steps"] = df["n_excess_steps"] / 2  # convert steps to nodes
 
     # plot cross subject mean ± SEM
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(2, 3))
-    cp.plot_group_by_stim(df, y="n_excess_steps", ax=ax, print_stats=print_stats)
+    cp.plot_group_by_stim(df, y=y, ax=ax, print_stats=print_stats)
 
 
 # %% excess steps functions
 
 
-def get_excess_steps_df(
+def get_performance_df(
     sessions=None,
     first_goal_sight=True,
     goal_sight_kwargs={"alpha_deg": 160, "smooth_SD": 4, "min_consecutive": 0.4},
@@ -296,7 +297,7 @@ def get_excess_steps_df(
     # calc excess steps for each session
     if jobs:
         dfs = Parallel(n_jobs=jobs)(
-            delayed(get_session_excess_steps_df)(
+            delayed(get_session_performance_df)(
                 session,
                 first_goal_sight=first_goal_sight,
                 goal_sight_kwargs=goal_sight_kwargs,
@@ -308,7 +309,7 @@ def get_excess_steps_df(
         for session in sessions:
             if verbose:
                 print(session.name)
-            _df = get_session_excess_steps_df(
+            _df = get_session_performance_df(
                 session,
                 first_goal_sight=first_goal_sight,
                 goal_sight_kwargs=goal_sight_kwargs,
@@ -318,7 +319,7 @@ def get_excess_steps_df(
     return excess_steps_df
 
 
-def get_session_excess_steps_df(
+def get_session_performance_df(
     session,
     first_goal_sight=True,
     goal_sight_kwargs={"alpha_deg": 160, "smooth_SD": 4, "min_consecutive": 0.4},
@@ -370,6 +371,9 @@ def get_session_excess_steps_df(
         start_geodesic_dist = nx.shortest_path_length(
             skeleton_maze, skeleton_label2coord[start_skel], skeleton_label2coord[goal + "_C"], weight="weight"
         )
+        # also calculate other performance metrics like trial_duration and n_errors (pokes into non-goal towers)
+        n_errors = trials_df.loc[trial, ("errors", "")]
+        trial_duration = trials_df.loc[trial, ("time", "reward")] - trials_df.loc[trial, ("time", "cue")]
         # store results
         results.append(
             {
@@ -384,6 +388,9 @@ def get_session_excess_steps_df(
                 "goal": goal,
                 "stim_trial": trials_df.loc[trial, ("stim_trial", "")],
                 "trials_since_stim": trials_df.loc[trial, ("trials_since_stim", "")],
+                "consecutive_stim_trials": trials_df.loc[trial, ("consecutive_stim_trials", "")],
+                "trial_duration": trial_duration,
+                "n_errors": n_errors,
                 "n_excess_steps": n_excess_steps,
                 "shortest_path_length": shortest_path_length,
                 "path_length": path_length,
