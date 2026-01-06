@@ -18,37 +18,6 @@ FRAME_RATE = 60
 # %% Functions
 
 
-def get_session_delta_distance_to_goal(session, cue_window=5, stim=False):
-    """"""
-    navigation_df = session.navigation_df
-    skeleton_maze = session.skeleton_maze()
-    window_frames = cue_window * FRAME_RATE
-    skeleton_label2skeleton_coord = {v: k for k, v in nx.get_node_attributes(skeleton_maze, "label").items()}
-    shortest_path_lengths = dict(nx.all_pairs_dijkstra_path_length(skeleton_maze, weight="weight"))
-    dD_dts = []
-    for trial in _get_trials(session, stim):
-        trial_df = navigation_df[navigation_df.trial == trial]
-        goal_coord = skeleton_label2skeleton_coord[trial_df.goal.unique()[0] + "_C"]
-        cue_indx = trial_df.index[0]
-        sk_locations = navigation_df.iloc[
-            cue_indx - window_frames : cue_indx + window_frames + 1
-        ].maze_position.skeleton.to_numpy()
-        if len(sk_locations) == 0:
-            continue  # window out of session bounds
-        sk_coords = [skeleton_label2skeleton_coord[loc] for loc in sk_locations]
-        distance_to_goal = np.array([shortest_path_lengths[c][goal_coord] for c in sk_coords])
-        dD_dt = np.diff(distance_to_goal) * FRAME_RATE  # m/s
-        dD_dts.append(dD_dt)
-    return np.vstack(dD_dts)  # [trials, timepoints]
-
-
-def _get_trials(session, stim_on=True):
-    """Returns list of trials in the stim_off or stim_on conditions."""
-    trials_df = session.trials_df
-    _df = trials_df[trials_df.stim_trial == stim_on]
-    return _df.trial.to_list()
-
-
 def get_session_delta_distance_to_goal_df(session, cue_window=5):
     """ """
     window_frames = cue_window * FRAME_RATE
