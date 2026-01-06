@@ -6,6 +6,7 @@ Plotting functions common to many analyses
 # %% Imports
 import matplotlib.pyplot as plt
 import seaborn as sns
+from tabulate import tabulate
 
 from pingouin import mixed_anova
 
@@ -63,6 +64,7 @@ def plot_group_by_stim(df, y, ax=None, stim_color="#0077FF", print_stats=False):
     )
     ax.set_xlabel("group")
     ax.set_ylabel(y)
+    ax.set_ylim(bottom=0)
     if print_stats:
         stats_df = mixed_anova(
             dv=y,
@@ -85,4 +87,5 @@ def plot_group_by_stim(df, y, ax=None, stim_color="#0077FF", print_stats=False):
             transform=ax.transAxes,
             fontsize=8,
         )
-        print(stats_df)
+        print(f"Mixed ANOVA: {y}")
+        print(tabulate(stats_df, headers="keys", tablefmt="psql", showindex=False))

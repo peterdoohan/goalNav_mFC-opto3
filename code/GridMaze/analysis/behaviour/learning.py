@@ -60,8 +60,8 @@ def plot_learning_summary(learning_curve_df, maze_order=1, print_stats=True, ax=
         loc="upper left",
         fontsize="small",
     )
-    ymax = df.total_trials.max() * 1.1
-    ax.set_ylim(0, ymax)
+    # ymax = df.total_trials.max() * 1.1
+    # ax.set_ylim(0, ymax)
     ax.set_xlabel("learning days")
     ax.set_ylabel("trials")
 
@@ -140,11 +140,11 @@ def plot_expert_performance_summary(
 
     # plot individual sessions per condition
     sns.stripplot(
-        data=df,
+        data=subj_av,
         y="total_trials",
         hue="condition",
         palette=["#0077FF", "black"],
-        alpha=0.05,
+        alpha=0.25,
         dodge=0.01,
         legend=False,
     )
@@ -161,6 +161,7 @@ def plot_expert_performance_summary(
     )
     ax.set_ylabel("trials")
     ax.set_xlabel("expert \n sessions")
+    ax.set_ylim(bottom=0)
 
     if y_axis_off:
         ax.yaxis.set_visible(False)

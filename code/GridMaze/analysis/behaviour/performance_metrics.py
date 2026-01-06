@@ -24,7 +24,7 @@ from GridMaze.analysis.behaviour import trajectory_plotting as tp
 from scipy.spatial.distance import euclidean
 
 # %% Global Variables
-from GridMaze.paths import EXPERIMENT_INFO_PATH
+from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
 
 with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
     SUBJECT_IDS = json.load(f)
@@ -168,12 +168,12 @@ def plot_delta_delta_excess_steps_across_goals(
 
 
 def plot_stim_effects_over_days(
-    excess_steps_df,
+    df,
+    y="n_excess_steps",
     groups=["control", "opto"],
     stim_day_range=None,
     outlier_thres=500,
     ignore_sessions_with_issues_noted=False,
-    steps_as_nodes=True,
     rolling_avg=2,
     ax=None,
 ):
@@ -186,24 +186,22 @@ def plot_stim_effects_over_days(
     ax.axhline(0, color="black", linestyle="--", alpha=0.5)
 
     # filter data
-    _df = excess_steps_df.copy()
-    if steps_as_nodes:
-        _df["n_excess_steps"] = _df["n_excess_steps"] / 2  # convert steps to nodes
+    _df = df.copy()
     if outlier_thres is not None:
-        _df = _df[_df.n_excess_steps <= outlier_thres]
+        _df = _df[_df[y] <= outlier_thres]
     if ignore_sessions_with_issues_noted:
         _df = _df[~_df.session_issue_noted]
 
     # average excess steps per subject per day
-    df = _df.groupby(["condition", "subject_ID", "stim_trial", "total_stim_days"]).n_excess_steps.mean().reset_index()
+    df = _df.groupby(["condition", "subject_ID", "stim_trial", "total_stim_days"])[y].mean().reset_index()
     # pivot
     delta_steps = (
-        df.pivot(index=["subject_ID", "condition", "total_stim_days"], columns="stim_trial", values="n_excess_steps")
+        df.pivot(index=["subject_ID", "condition", "total_stim_days"], columns="stim_trial", values=y)
         .diff(axis=1)[True]
         .reset_index()
     )
-    delta_steps.rename(columns={True: "delta_excess_steps"}, inplace=True)
-    subject_grouped = delta_steps.groupby(["condition", "total_stim_days"]).delta_excess_steps
+    delta_steps.rename(columns={True: f"delta_{y}"}, inplace=True)
+    subject_grouped = delta_steps.groupby(["condition", "total_stim_days"])[f"delta_{y}"]
     mean_df = subject_grouped.mean().unstack(level=0)
     sem_df = subject_grouped.sem().unstack(level=0)
     if rolling_avg:
@@ -226,7 +224,7 @@ def plot_stim_effects_over_days(
         )
     ax.legend(fontsize="x-small", frameon=False)
     ax.set_xlabel("stim day")
-    ax.set_ylabel("Δ excess steps \n (light on - light off)")
+    ax.set_ylabel(f"Δ {y} \n (light on - light off)")
     if stim_day_range is not None:
         ax.set_xlim(stim_day_range)
 
@@ -239,11 +237,10 @@ def plot_random_effects_summary(
     y="n_excess_steps",
     stim_day_range=(8, np.inf),
     outlier_thres=500,
-    starting_dist_range=None,
     ignore_sessions_with_issues_noted=False,
     ignore_first_trial_after_stim=False,
-    steps_as_nodes=True,
     print_stats=True,
+    stim_color="#0077FF",
     ax=None,
 ):
     """ """
@@ -253,8 +250,6 @@ def plot_random_effects_summary(
         _df = _df[_df.total_stim_days.between(*stim_day_range)]
     if outlier_thres is not None:
         _df = _df[_df[y] <= outlier_thres]
-    if starting_dist_range is not None:
-        _df = _df[_df.start_geodesic_dist.between(*starting_dist_range)]
     if ignore_first_trial_after_stim:
         _df = _df[_df.trials_since_stim != 1]
     if ignore_sessions_with_issues_noted:
@@ -262,13 +257,11 @@ def plot_random_effects_summary(
 
     # average excess steps per subject over trials
     df = _df.groupby(["condition", "subject_ID", "stim_trial"])[y].mean().reset_index()
-    if y == "n_excess_steps" and steps_as_nodes:
-        df["n_excess_steps"] = df["n_excess_steps"] / 2  # convert steps to nodes
 
     # plot cross subject mean ± SEM
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(2, 3))
-    cp.plot_group_by_stim(df, y=y, ax=ax, print_stats=print_stats)
+    cp.plot_group_by_stim(df, y=y, ax=ax, stim_color=stim_color, print_stats=print_stats)
 
 
 # %% excess steps functions
@@ -278,10 +271,20 @@ def get_performance_df(
     sessions=None,
     first_goal_sight=True,
     goal_sight_kwargs={"alpha_deg": 160, "smooth_SD": 4, "min_consecutive": 0.4},
-    verbose=True,
+    verbose=False,
     jobs=-1,
+    save=False,
 ):
     """ """
+    # load and return if already generated
+    save_path = RESULTS_PATH / "behaviour" / "performance_df.parquet"
+    if not save and save_path.exists():
+        if verbose:
+            print("Loading performance_df from results...")
+        performance_df = pd.read_parquet(save_path)
+        return performance_df
+
+    # else generate
     if sessions is None:
         # load all stim sessions
         if verbose:
@@ -294,7 +297,7 @@ def get_performance_df(
             must_have_data=True,
             verbose=True,
         )
-    # calc excess steps for each session
+    # calc excess steps & other metrics for each session
     if jobs:
         dfs = Parallel(n_jobs=jobs)(
             delayed(get_session_performance_df)(
@@ -315,14 +318,22 @@ def get_performance_df(
                 goal_sight_kwargs=goal_sight_kwargs,
             )
             dfs.append(_df)
-    excess_steps_df = pd.concat(dfs, ignore_index=True)
-    return excess_steps_df
+    performance_df = pd.concat(dfs, ignore_index=True)
+
+    # save to disk
+    if save:
+        if verbose:
+            print("Saving performance_df to results...")
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        performance_df.to_parquet(save_path)
+    return performance_df
 
 
 def get_session_performance_df(
     session,
     first_goal_sight=True,
     goal_sight_kwargs={"alpha_deg": 160, "smooth_SD": 4, "min_consecutive": 0.4},
+    steps_as_nodes=True,
 ):
     """ """
     # load data
@@ -406,5 +417,9 @@ def get_session_performance_df(
     else:
         issue_noted = False
     excess_steps_df["session_issue_noted"] = issue_noted
+
+    # optionally convert steps to nodes (instead of node+edge)
+    if steps_as_nodes:
+        excess_steps_df["n_excess_steps"] = excess_steps_df["n_excess_steps"] / 2
 
     return excess_steps_df
