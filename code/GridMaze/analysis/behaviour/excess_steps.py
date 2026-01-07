@@ -28,8 +28,33 @@ with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
 # %% random effects goal difficulty tests
 
 
-def test():
-    return
+def test(
+    excess_steps_df,
+    stim_day_range=(4, np.inf),
+    outlier_thres=500,
+    var="goal_fitness",
+):
+    """ """
+    # filter data
+    df = _filter_excess_steps_df(excess_steps_df, stim_day_range, outlier_thres)
+
+    # get delta xs steps between stim-on and stim-off per goal for each subject
+    delta_df = (
+        df.groupby(["condition", "subject_ID", "maze_name", "goal", "stim_trial"])
+        .n_excess_steps.mean()
+        .unstack(-1)
+        .diff(axis=1)[True]
+        .reset_index()
+    )  # note: because we are stratifying by goal we no stim trials in some conditions (delta=np.nan)
+    delta_df.rename(columns={True: "delta_excess_steps"}, inplace=True)
+    # add goal fitness for each maze-goal
+    delta_df = add_trial_covariates(delta_df, c=[var], zscore_vars=False)
+    delta_df = delta_df.dropna(subset=["delta_excess_steps"])  # drop goals with no stim trials
+
+    z = delta_df[delta_df.condition == "opto"]
+    zz = z.groupby(["maze_name", "goal"])[["delta_excess_steps", "goal_fitness"]].mean()
+    plt.scatter(zz.goal_fitness, zz.delta_excess_steps)
+    return delta_df
 
 
 # %% Linear mixed modelling
@@ -49,11 +74,7 @@ def run_3way_linear_mixed_model(
         does this covary with other task features?.
     """
     # filter data
-    df = excess_steps_df.copy()
-    if stim_day_range is not None:
-        df = df[df.total_stim_days.between(*stim_day_range)]
-    if outlier_thres is not None:
-        df = df[df.n_excess_steps <= outlier_thres]
+    df = _filter_excess_steps_df(excess_steps_df, stim_day_range, outlier_thres)
 
     # add covariate
     df = add_trial_covariates(df, c=[var], zscore_vars=zscore_var)
@@ -176,11 +197,7 @@ def plot_delta_delta_excess_steps_across_goals(
 ):
     """ """
     # filter data
-    df = excess_steps_df.copy()
-    if stim_day_range is not None:
-        df = df[df.total_stim_days.between(*stim_day_range)]
-    if outlier_thres is not None:
-        df = df[df.n_excess_steps <= outlier_thres]
+    df = _filter_excess_steps_df(excess_steps_df, stim_day_range, outlier_thres)
     df = df[df.maze_name == maze_name]
     # get delta (light on - light off) per goal per subject
     # then average this delta across subjects in each condition (opto/control)
@@ -212,3 +229,20 @@ def plot_delta_delta_excess_steps_across_goals(
         vmax=vmax,
         ax=ax,
     )
+
+
+# %% unitls
+
+
+def _filter_excess_steps_df(
+    excess_steps_df,
+    stim_day_range=(8, np.inf),
+    outlier_thres=500,
+):
+    """ """
+    df = excess_steps_df.copy()
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    if outlier_thres is not None:
+        df = df[df.n_excess_steps <= outlier_thres]
+    return df
