@@ -126,6 +126,134 @@ def test(
     print(f"LR = {LR:.3f}, df = {df_diff}, p = {p_val:.4g}")
 
 
+def run_3way_linear_mixed_model(
+    excess_steps_df,
+    stim_day_range=(8, np.inf),
+    outlier_thres=None,
+    var="goal_fitness",
+    zscore_var=True,
+    print_stats_model_summaries=True,
+):
+    """
+    Trying to ask, does a 3-way interaction with group x stim x var explain excess steps?
+        Given that we have already established a strong group x stim interaction,
+        does this covary with other task features?.
+    """
+    # filter data
+    df = excess_steps_df.copy()
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    if outlier_thres is not None:
+        df = df[df.n_excess_steps <= outlier_thres]
+
+    # add covariate
+    df = add_trial_covariates(df, c=[var], zscore_vars=zscore_var)
+
+    # full model (with group x stim x var 3-way interaction)
+    md_full = smf.mixedlm(
+        formula=f"n_excess_steps ~ condition * stim_trial * {var}",
+        data=df,
+        groups=df["subject_ID"],
+        re_formula=f"~stim_trial + {var} + stim_trial:{var}",
+    )
+    res_full = md_full.fit(
+        reml=False, method="lbfgs", maxiter=10000
+    )  # fit with maximum likelihood for model comparison
+
+    # reduced model (without group x stim x var 3-way interaction)
+    md_reduced = smf.mixedlm(
+        formula=f"n_excess_steps ~ (condition * stim_trial) + (condition * {var}) + (stim_trial * {var})",
+        data=df,
+        groups=df["subject_ID"],
+        re_formula=f"~stim_trial + {var} + stim_trial:{var}",  # same random effects structure
+    )
+    res_reduced = md_reduced.fit(reml=False, method="lbfgs", maxiter=10000)
+
+    # performance likelihood ratio test
+    llf_full = res_full.llf
+    llf_red = res_reduced.llf
+    df_diff = len(res_full.fe_params) - len(res_reduced.fe_params)
+    LR = 2 * (llf_full - llf_red)
+    p_val = 1 - chi2.cdf(LR, df_diff)
+    print("Likelihood Ratio Test for group x stim x var interaction:")
+    print(f"    LR={LR:.3f}, df={df_diff}, p={p_val:.4g}")
+
+    if print_stats_model_summaries:
+        print("Full model results:")
+        print(res_full.summary())
+        print("\nReduced model results:")
+        print(res_reduced.summary())
+
+
+def add_trial_covariates(
+    df,  #
+    c=[
+        "starting_distance_diff",
+        "goal_betweenness_centrality",
+        "goal_mean_geodesic_distance",
+        "goal_degree",
+        "goal_fitness",
+    ],
+    zscore_vars=True,
+):
+    """
+    df = performance_df from GridMaze.analysis.behaviour.performance_metrics.get_performance_df()
+           or equiv.
+    """
+
+    _df = df.copy()
+    # check inputs
+    for _c in c:
+        if _c not in [
+            "starting_distance_diff",
+            "goal_betweenness_centrality",
+            "goal_mean_geodesic_distance",
+            "goal_degree",
+            "goal_fitness",
+        ]:
+            raise ValueError(f"Covariate {_c} not recognized.")
+
+    maze_1 = mr.get_simple_maze("maze_1")
+    maze_2 = mr.get_simple_maze("maze_2")
+
+    def _goal2var(row, maze_1_dict, maze_2_dict):
+        if row.maze_name == "maze_1":
+            return maze_1_dict[row.goal]
+        elif row.maze_name == "maze_2":
+            return maze_2_dict[row.goal]
+
+    if "starting_distance_diff" in c:
+        # use precomputed distances from performance metrics
+        v = _df["start_geodesic_dist"] - _df["start_euclidean_dist"]
+        _df["starting_distance_diff"] = zscore(v) if zscore_vars else v
+
+    if "goal_betweenness_centrality" in c:
+        maze_1_dict = mm.get_betweeness_centrality(maze_1)
+        maze_2_dict = mm.get_betweeness_centrality(maze_2)
+        v = _df.apply(lambda row: _goal2var(row, maze_1_dict, maze_2_dict), axis=1)
+        _df["goal_betweenness_centrality"] = zscore(v) if zscore_vars else v
+
+    if "goal_mean_geodesic_distance" in c:
+        maze_1_dict = mm.get_mean_geodesic_distance(maze_1)
+        maze_2_dict = mm.get_mean_geodesic_distance(maze_2)
+        v = _df.apply(lambda row: _goal2var(row, maze_1_dict, maze_2_dict), axis=1)
+        _df["mean_geodesic_distance"] = zscore(v) if zscore_vars else v
+
+    if "goal_degree" in c:
+        maze_1_dict = mm.get_node_degree(maze_1)
+        maze_2_dict = mm.get_node_degree(maze_2)
+        v = _df.apply(lambda row: _goal2var(row, maze_1_dict, maze_2_dict), axis=1)
+        _df["goal_degree"] = zscore(v) if zscore_vars else v
+
+    if "goal_fitness" in c:
+        maze_1_dict = mm.get_fitness(maze_1)
+        maze_2_dict = mm.get_fitness(maze_2)
+        v = _df.apply(lambda row: _goal2var(row, maze_1_dict, maze_2_dict), axis=1)
+        _df["goal_fitness"] = zscore(v) if zscore_vars else v
+
+    return _df
+
+
 # %%
 
 

@@ -27,7 +27,7 @@ def get_betweeness_centrality(simple_maze, with_edges=False):
     return {coord2label[coord]: bc for coord, bc in BC.items()}
 
 
-def get_mean_shortest_path_distance(simple_maze, with_edges=False):
+def get_mean_geodesic_distance(simple_maze, with_edges=False):
     """ """
     if with_edges:
         graph = mr.get_extended_simple_maze(simple_maze)
@@ -48,7 +48,7 @@ def get_mean_shortest_path_distance(simple_maze, with_edges=False):
     return label2spd
 
 
-def get_mean_distance_decorrelation(simple_maze, with_edges=False):
+def get_fitness(simple_maze, with_edges=False):
     """
     calculates the mean euclidean vs geodesic distance correlation for each node in the maze
     (corr vector of euclidean distances to all other nodes vs geodesic distances to all other nodes)
