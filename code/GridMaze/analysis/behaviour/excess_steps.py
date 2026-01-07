@@ -127,7 +127,7 @@ def plot_stratified_delta_excess_steps(
                 # add text labels for points with large delta excess steps
                 offset = 0.02
                 for goal, row in maze_df.iterrows():
-                    if abs(row.delta_excess_steps) >= point_label_thres:
+                    if row.delta_excess_steps >= point_label_thres:
                         ax.text(
                             row[var] + offset,
                             row.delta_excess_steps + offset,
@@ -156,6 +156,8 @@ def plot_stratified_delta_excess_steps(
             edgecolor="none",
             linewidth=0,
         )
+    # axes[0].set_ylim(bottom=-2.5)
+    # axes[1].set_ylim(bottom=-2.5)
 
 
 def plot_special_maze_legend(axes=None, maze_cmap="rainbow", maze_color="silver"):
