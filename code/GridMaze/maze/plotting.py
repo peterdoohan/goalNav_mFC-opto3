@@ -361,6 +361,7 @@ def plot_simple_maze_silhouette(
     special_location2color=None,
     node_size=500,
     edge_size=10,
+    node_shape="8",
 ):
     """"""
     node_coord2node_label = nx.get_node_attributes(simple_maze, "label")
@@ -409,7 +410,7 @@ def plot_simple_maze_silhouette(
         edgecolors=node_border_colors,
         edge_color=edge_colors,
         node_size=node_size,
-        node_shape="8",
+        node_shape=node_shape,
         linewidths=1.5,
         width=edge_size,
         with_labels=False,

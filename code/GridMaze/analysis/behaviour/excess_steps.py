@@ -8,9 +8,11 @@ of increased excess steps during navigation with mFC inhibition
 import json
 import numpy as np
 import pandas as pd
+import seaborn as sns
+import networkx as nx
 from matplotlib import pyplot as plt
 import statsmodels.formula.api as smf
-from scipy.stats import zscore, chi2
+from scipy.stats import zscore, chi2, linregress, ttest_ind, ttest_1samp
 
 from GridMaze.maze import representations as mr
 from GridMaze.maze import metrics as mm
@@ -28,13 +30,165 @@ with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
 # %% random effects goal difficulty tests
 
 
-def test(
+def plot_delta_excess_steps_fit_slopes(
     excess_steps_df,
-    stim_day_range=(4, np.inf),
+    stim_day_range=(8, np.inf),
+    outlier_thres=500,
+    var="goal_fitness",
+    print_stats=True,
+    ax=None,
+):
+    """ """
+    delta_df = get_stratified_delta_excess_steps_df(excess_steps_df, stim_day_range, outlier_thres, var)
+    fits_df = get_random_effects_linreg_fits(delta_df, var)
+
+    # plotting
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(1, 2))
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.axhline(0, color="k", lw=0.5, ls="--")
+
+    sns.stripplot(
+        data=fits_df,
+        y="slope",
+        hue="condition",
+        palette=["black", "#0077FF"],
+        alpha=0.25,
+        dodge=0.01,
+        legend=False,
+    )
+    # plot subject mean & sem
+    sns.pointplot(
+        data=fits_df,
+        y="slope",
+        hue="condition",
+        palette=["black", "#0077FF"],
+        errorbar="se",
+        dodge=0.4,
+        ax=ax,
+        legend=False,
+    )
+
+    if print_stats:
+        control_slopes = fits_df[fits_df.condition == "control"].slope
+        opto_slopes = fits_df[fits_df.condition == "opto"].slope
+        t_cond, p_cond = ttest_ind(control_slopes, opto_slopes)
+        t_cont, p_cont = ttest_1samp(control_slopes, 0)
+        t_opto, p_opto = ttest_1samp(opto_slopes, 0)
+        print("T-tests on slope from delta xs steps linear fit:")
+        print(f"  control vs opto: t={t_cond:.2f}, p={p_cond:.3f}")
+        print(f"  control vs 0: t={t_cont:.2f}, p={p_cont:.3f}")
+        print(f"  opto vs 0: t={t_opto:.2f}, p={p_opto:.3f}")
+
+    return
+
+
+def plot_stratified_delta_excess_steps(
+    excess_steps_df,
+    stim_day_range=(8, np.inf),
+    outlier_thres=500,
+    var="goal_fitness",
+    maze_cmap="rainbow",
+    point_labels=True,
+    point_label_thres=4,
+    regplot_color="silver",
+    axes=None,
+):
+    """ """
+    delta_df = get_stratified_delta_excess_steps_df(excess_steps_df, stim_day_range, outlier_thres, var)
+    fits_df = get_random_effects_linreg_fits(delta_df, var)
+    # plotting
+    if axes is None:
+        f, axes = plt.subplots(1, 2, figsize=(6, 3), sharey=True, sharex=True)
+    for ax in axes:
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.axhline(0, color="k", lw=0.5, ls="--")
+        ax.set_xlabel(var)
+    axes[0].set_ylabel("Δ excess steps \n (stim On - stim Off)")
+
+    colors = sns.color_palette(maze_cmap, n_colors=49)
+    for condition, ax in zip(["control", "opto"], axes):
+        ax.set_title(condition)
+        cond_df = delta_df[delta_df.condition == condition]
+        cond_avg = cond_df.groupby(["maze_name", "goal"])[["delta_excess_steps", var]].mean()
+        for maze_name, mk in zip(["maze_1", "maze_2"], ["s", "D"]):
+            maze_df = cond_avg.loc[maze_name]
+            # plot goal scatter
+            ax.scatter(
+                maze_df[var],
+                maze_df.delta_excess_steps,
+                label=maze_name,
+                marker=mk,
+                color=colors,
+                s=20,
+            )
+
+            if point_labels:
+                # add text labels for points with large delta excess steps
+                offset = 0.02
+                for goal, row in maze_df.iterrows():
+                    if abs(row.delta_excess_steps) >= point_label_thres:
+                        ax.text(
+                            row[var] + offset,
+                            row.delta_excess_steps + offset,
+                            str(goal),
+                            fontsize=8,
+                            alpha=0.5,
+                        )
+        # plot linear fit (random effects x subj)
+        cond_fit_df = fits_df[fits_df.condition == condition]
+        mean_slope = cond_fit_df.slope.mean()
+        mean_intercept = cond_fit_df.intercept.mean()
+        sem_slope = cond_fit_df.slope.sem()
+        sem_intercept = cond_fit_df.intercept.sem()
+        x = np.linspace(delta_df[var].min(), delta_df[var].max(), 200)
+        y_mean = mean_intercept + mean_slope * x
+        y_sem = np.sqrt(sem_intercept**2 + (x * sem_slope) ** 2)  # SEM propagation (first-order approximation)
+
+        # plot line and shaded error
+        ax.plot(x, y_mean, color=regplot_color, lw=2)
+        ax.fill_between(
+            x,
+            y_mean - y_sem,
+            y_mean + y_sem,
+            color=regplot_color,
+            alpha=0.2,
+            edgecolor="none",
+            linewidth=0,
+        )
+
+
+def plot_special_maze_legend(axes=None, maze_cmap="rainbow", maze_color="silver"):
+    """
+    legend to go with stratified delta excess steps plot
+    """
+    if axes is None:
+        f, axes = plt.subplots(2, 1, figsize=(2, 4))
+    maze_1 = mr.get_simple_maze("maze_1")
+    maze_2 = mr.get_simple_maze("maze_2")
+    nodes = list(nx.get_node_attributes(maze_1, "label").values())
+    colors = sns.color_palette(maze_cmap, n_colors=49)
+    node2color = {n: c for n, c in zip(sorted(nodes), colors)}
+    for ax, maze, mk in zip(axes, [maze_1, maze_2], ["s", "D"]):
+        mp.plot_simple_maze_silhouette(
+            maze,
+            ax,
+            color=maze_color,
+            highlight_nodes=nodes,
+            highlight_color=maze_color,
+            special_location2color=node2color,
+            node_size=35,
+            edge_size=3.5,
+            node_shape=mk,
+        )
+
+
+def get_stratified_delta_excess_steps_df(
+    excess_steps_df,
+    stim_day_range=(8, np.inf),
     outlier_thres=500,
     var="goal_fitness",
 ):
-    """ """
     # filter data
     df = _filter_excess_steps_df(excess_steps_df, stim_day_range, outlier_thres)
 
@@ -50,11 +204,22 @@ def test(
     # add goal fitness for each maze-goal
     delta_df = add_trial_covariates(delta_df, c=[var], zscore_vars=False)
     delta_df = delta_df.dropna(subset=["delta_excess_steps"])  # drop goals with no stim trials
-
-    z = delta_df[delta_df.condition == "opto"]
-    zz = z.groupby(["maze_name", "goal"])[["delta_excess_steps", "goal_fitness"]].mean()
-    plt.scatter(zz.goal_fitness, zz.delta_excess_steps)
     return delta_df
+
+
+def get_random_effects_linreg_fits(delta_df, var="goal_fitness"):
+    """ """
+    results = []
+    for condition in ["control", "opto"]:
+        cond_df = delta_df[delta_df.condition == condition]
+        for subject in cond_df.subject_ID.unique():
+            _coefs = {"condition": condition, "subject_ID": subject}
+            subj_df = cond_df[cond_df.subject_ID == subject]
+            slope, intercept, *_ = linregress(subj_df[var], subj_df["delta_excess_steps"])
+            _coefs["slope"] = slope
+            _coefs["intercept"] = intercept
+            results.append(_coefs)
+    return pd.DataFrame(results)
 
 
 # %% Linear mixed modelling
@@ -167,7 +332,7 @@ def add_trial_covariates(
         maze_1_dict = mm.get_mean_geodesic_distance(maze_1)
         maze_2_dict = mm.get_mean_geodesic_distance(maze_2)
         v = _df.apply(lambda row: _goal2var(row, maze_1_dict, maze_2_dict), axis=1)
-        _df["mean_geodesic_distance"] = zscore(v) if zscore_vars else v
+        _df["goal_mean_geodesic_distance"] = zscore(v) if zscore_vars else v
 
     if "goal_degree" in c:
         maze_1_dict = mm.get_node_degree(maze_1)
