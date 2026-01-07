@@ -6,11 +6,9 @@ Lib for quantification of movement dynamics between groups (opto & control)
 # %% Imports
 import json
 from turtle import pos
-from itsdangerous import NoneAlgorithm
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
-from regex import F
 from scipy.ndimage import gaussian_filter1d
 
 from GridMaze.analysis.core import get_sessions as gs

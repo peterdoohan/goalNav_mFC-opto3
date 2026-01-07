@@ -171,8 +171,7 @@ def plot_delta_delta_excess_steps_across_goals(
     maze_name="maze_2",
     stim_day_range=(8, np.inf),
     outlier_thres=500,
-    highlight_significant=True,
-    vmax=5,
+    vmax=10,
     ax=None,
 ):
     """ """
@@ -204,11 +203,12 @@ def plot_delta_delta_excess_steps_across_goals(
     mp.plot_simple_heatmap(
         simple_maze,
         pd.concat([delta_delta_df, pd.Series(0, index=edges)]),
-        colormap="mako",
+        colormap="viridis",
         value_label="ΔΔ excess steps",
         node_size=175,
         edge_size=6.5,
-        vmin=0,
+        allow_negative=True,
+        vmin=None,
         vmax=vmax,
         ax=ax,
     )
