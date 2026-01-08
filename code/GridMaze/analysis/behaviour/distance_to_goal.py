@@ -199,7 +199,10 @@ def plot_delta_distance_to_goal_summary(
         mean_cond = mean.loc[cond]
         sem_cond = sem.loc[cond]
         times = mean_cond.columns.astype(float)
-        for stim_trial, color in zip([True, False], ["dimgrey", stim_color]):
+        for stim_trial, color in zip(
+            [True, False],
+            [stim_color, "dimgrey"],
+        ):
             _mean = mean_cond.loc[stim_trial].values
             _sem = sem_cond.loc[stim_trial].values
             if smooth_SD:
