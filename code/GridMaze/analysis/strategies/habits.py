@@ -1,10 +1,11 @@
 """ """
 
 # %% Imports
-from imagecodecs import none_check
 import numpy as np
 import pandas as pd
+import networkx as nx
 from joblib import Parallel, delayed
+from collections import deque
 
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.processing import get_trajectory_decisions_dfs as td
@@ -15,7 +16,7 @@ from GridMaze.analysis.processing import get_trajectory_decisions_dfs as td
 # %% Functions
 
 
-def test(
+def get_habit_values_df(
     session,
     subject_df,
     stim_day_range=None,
@@ -30,17 +31,22 @@ def test(
     data_df = data_df[data_df.maze_name == session.maze_name]
     # exclude current session
     data_df = data_df[data_df.session_name != session.name]
-    # keep only relevant columns
-    history_cols = [f"history_{i}" for i in range(1, n_history + 1)]
-    keep_cols = ["maze_position"] + history_cols + ["action"]
-    data_df = data_df[keep_cols]
     # exclude decisions where history is not defined
     data_df = data_df.dropna()
 
-    # get probs
-    counts = data_df.groupby(keep_cols).size().reset_index(name="count")
-    counts["prob"] = counts["count"] / counts.groupby(history_cols)["count"].transform("sum")
-    return counts
+    # keep only relevant columns
+    history_cols = [f"history_{i}" for i in range(1, n_history + 1)]
+    state_cols = ["maze_position"] + history_cols  # define state here as some history of locs incl. current
+    valid_states = get_all_valid_histories(session, n=n_history + 1)
+    state_counts_df = data_df.groupby(state_cols).size().reset_index(name="sate_count")
+    sate_action_counts_df = data_df.groupby(state_cols + ["action"]).size().reset_index(name="sate_action_count")
+    return state_counts_df, sate_action_counts_df
+    # add n_actions_available
+    simple_maze = session.simple_maze()
+    label2coord = {v: k for k, v in nx.get_node_attributes(simple_maze, "label").items()}
+    counts_df["n_actions_available"] = counts_df.maze_position.apply(lambda x: simple_maze.degree(label2coord[x]))
+    # counts["prob"] = counts["count"] / counts.groupby(history_cols)["count"].transform("sum")
+    return counts_df
 
 
 def get_subject_decisions_df(
@@ -130,3 +136,40 @@ def get_decisions_df(
         decisions_df[f"history_{i}"] = decisions_df.groupby("trial_unique_ID")["maze_position"].shift(i)
 
     return decisions_df
+
+
+# %% a bit of graph theory
+
+
+def get_all_valid_histories(session, n=3):
+    simple_maze = session.simple_maze()
+    coord2label = nx.get_node_attributes(simple_maze, "label")
+    valid_walks = []
+    for w in walks_of_length_n(simple_maze, n):
+        # translate to label
+        walk = [coord2label[n] for n in w]
+        valid_walks.append(walk)
+    return valid_walks
+
+
+def walks_of_length_n(G, n, sources=None):
+    """
+    Yield all node sequences (tuples) of length n that are valid walks in G.
+    Walks may revisit nodes/edges.
+    If sources is None, start from every node in G.
+    """
+    if n <= 0:
+        return
+    if sources is None:
+        sources = G.nodes()
+    # sequences are tuples of nodes length current_len
+    frontier = deque(((s,)) for s in sources)  # deque of tuple-of-tuples for memory locality
+    while frontier:
+        seq = frontier.popleft()
+        if len(seq) == n:
+            yield seq
+            continue
+        last = seq[-1]
+        for nbr in G.neighbors(last):
+            # extend
+            frontier.append(seq + (nbr,))
