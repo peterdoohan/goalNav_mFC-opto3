@@ -23,6 +23,7 @@ SUBJECT_INFO_DF = pd.read_csv(EXPERIMENT_INFO_PATH / "subject_info_df.htsv", sep
 with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as infile:
     SUBJECT_IDS = json.load(infile)
 
+TOTAL_STIM_DAYS = 24
 
 PROCESSED_DATA_STRUCTURE2FILENAME = {
     "session_info": "session_info.json",
