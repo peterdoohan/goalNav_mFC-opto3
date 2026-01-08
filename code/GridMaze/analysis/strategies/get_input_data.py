@@ -17,7 +17,13 @@ from GridMaze.analysis.core import get_sessions as gs
 
 def get_session_navigation_strategies_df(
     session,
-    strategies=["vector", "structure", "backtracking_penalty", "forward_bias", "habits"],
+    strategies=[
+        "vector",
+        "structure",
+        "backtracking_penalty",
+        "forward_bias",
+        # "habits",
+    ],
     habits_n_back=3,
     remove_edge_backtracks=True,
     ignore_final_step=True,
@@ -33,10 +39,10 @@ def get_session_navigation_strategies_df(
     node2action_available = get_node2action_available(simple_maze)
     label2coord = {v: k for k, v in nx.get_node_attributes(simple_maze, "label").items()}
     coord2pos = nx.get_node_attributes(simple_maze, "position")
-    all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze, weight="weight"))
+    all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze))
     opp_actions = {"N": "S", "S": "N", "E": "W", "W": "E"}
 
-    # define general mapping function
+    # define general value mapping function
     def _get_values(row, strategy):
         if strategy == "subject_choices":
             return get_subject_choices(row[("action", "")])
@@ -80,9 +86,15 @@ def get_session_navigation_strategies_df(
         else:
             raise ValueError(f"Unknown strategy: {strategy}")
 
-    # add subject_choice, optimal_choice and availability info to df
+    value_dfs = []
+    # get values subject_choice, optimal_choice and availability + requested strats for all choices
+    for v in ["subject_choices", "optimal_actions", "available"] + strategies:
+        df = pd.DataFrame(init_df.apply(_get_values, axis=1, strategy=v).to_list())
+        df.columns = pd.MultiIndex.from_product([[v], df.columns])
+        value_dfs.append(df)
 
-    # add further strategies requested from input
+    # combine with init_df
+    return pd.concat([init_df] + value_dfs, axis=1)
 
 
 def get_init_df(
@@ -141,8 +153,8 @@ def get_init_df(
         _df[("trial", "")] = t
         _df[("trial_unique_ID", "")] = gs.get_session_name(session_info) + f"_trial{t}"
         _df[("time_in_trial", "")] = times.sub(start_time)
-        _df[("goal", "")] = trials_df.loc[t].goal
-        _df[("stim_trial", "")] = trials_df.loc[t].stim_trial
+        _df[("goal", "")] = trials_df.loc[t, ("goal", "")]
+        _df[("stim_trial", "")] = trials_df.loc[t, ("stim_trial", "")]
         _df[("stim_on", "")] = choice_time2stim_on(trials_df.reset_index(), times)
         _df[("location", "")] = locs.values
         _df[("action", "")] = actions.values
@@ -190,7 +202,7 @@ def get_optimal_actions(loc, goal, label2coord=None, simple_maze=None, all_short
         label2coord = {v: k for k, v in nx.get_node_attributes(simple_maze, "label").items()}
     if all_shortest_path_lengths is None:
         assert simple_maze is not None, "Either simple_maze or all_shortest_path_lengths must be provided"
-        all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze, weight="weight"))
+        all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze))
 
     loc_coord = label2coord[loc]
     goal_coord = label2coord[goal]
@@ -248,7 +260,7 @@ def get_structure_values(loc, goal, label2coord=None, simple_maze=None, all_shor
         label2coord = {v: k for k, v in nx.get_node_attributes(simple_maze, "label").items()}
     if all_shortest_path_lengths is None:
         assert simple_maze is not None, "Either simple_maze or all_shortest_path_lengths must be provided"
-        all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze, weight="weight"))
+        all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze))
 
     coord = label2coord[loc]
     x, y = coord
