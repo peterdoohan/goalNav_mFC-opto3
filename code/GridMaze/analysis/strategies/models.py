@@ -49,13 +49,13 @@ def get_neg_loglikelihood(weights, strategies, df):
     """
     if len(weights) != len(strategies):
         raise ValueError("weights and strategies must have same length")
-
+    NSEW = ["N", "S", "E", "W"]
     # start with zeros and accumulate weighted strategy columns
     V = np.zeros((len(df), 4), dtype=float)
     for w, s in zip(weights, strategies):
         if s not in df.columns:
             raise KeyError(f"strategy '{s}' not found in input df")
-        V += w * df[s].to_numpy(dtype=float)
+        V += w * df[s][NSEW].to_numpy(dtype=float)
 
     # action availability handling (imposed by maze struct.)
     A_bool = df.available.to_numpy()

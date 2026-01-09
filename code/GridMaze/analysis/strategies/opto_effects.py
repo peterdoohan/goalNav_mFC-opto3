@@ -25,7 +25,7 @@ MAX_STIM_DURATION = 30  # seconds
 
 def get_group_by_stim_strategy_weights(
     navigation_strategies_df,
-    strategies=["vector", "structure", "backtracking_penalty"],
+    strategies=["vector", "structure", "habit", "backtracking_penalty", "forward_bias"],
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     max_trial_duration=None,
     stim_only=True,
@@ -53,7 +53,6 @@ def get_group_by_stim_strategy_weights(
             if stim_trial and stim_only:
                 _df = _df[_df.stim_on]
             # fit strategy weights on select data
-            return _df
             strategy_weights = models.get_navigation_strategy_weights(_df, strategies=strategies)
             results.append(
                 {

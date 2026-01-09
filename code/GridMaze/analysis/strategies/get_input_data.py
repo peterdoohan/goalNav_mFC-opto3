@@ -19,6 +19,8 @@ from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
 with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
     SUBJECT_IDS = json.load(infile)
 
+NSEW = ["N", "S", "E", "W"]  # TODO: should use this global varibale instead of defining locally in functions
+
 NAV_STRATEGIES = [
     "vector",
     "structure",
@@ -345,17 +347,18 @@ def get_structure_values(loc, goal, label2coord=None, simple_maze=None, all_shor
     values = {}
     for neigbour in neighbours:
         neigbour_cdir = get_neighbor_cdir(coord, neigbour)
-        neigbour_geodesic_distance_to_goal = all_shortest_path_lengths[neigbour][goal_coord]
-        if current_distance_to_goal > neigbour_geodesic_distance_to_goal:
+        neigbour_distance = all_shortest_path_lengths[neigbour][goal_coord]
+        if current_distance_to_goal > neigbour_distance:
             values[neigbour_cdir] = 1
-        elif current_distance_to_goal < neigbour_geodesic_distance_to_goal:
+        elif current_distance_to_goal < neigbour_distance:
             values[neigbour_cdir] = -1
         else:
             values[neigbour_cdir] = 0
     invalid_actions = list(set(["N", "S", "E", "W"]) - set(values.keys()))
     for invalid_cdir in invalid_actions:  # going off the maze is always long shortest path
         values[invalid_cdir] = -1
-    return values
+    # hacky reordering
+    return {d: values[d] for d in ["N", "S", "E", "W"]}
 
 
 def get_backtracking_penalty_values(prev_action, opp_actions=None):
