@@ -34,19 +34,27 @@ def get_habit_values_df(
     # exclude decisions where history is not defined
     data_df = data_df.dropna()
 
-    # keep only relevant columns
-    history_cols = [f"history_{i}" for i in range(1, n_history + 1)]
-    state_cols = ["maze_position"] + history_cols  # define state here as some history of locs incl. current
-    valid_states = get_all_valid_histories(session, n=n_history + 1)
-    state_counts_df = data_df.groupby(state_cols).size().reset_index(name="sate_count")
-    sate_action_counts_df = data_df.groupby(state_cols + ["action"]).size().reset_index(name="sate_action_count")
-    return state_counts_df, sate_action_counts_df
-    # add n_actions_available
+    # tally state-action counds including missing ones
     simple_maze = session.simple_maze()
-    label2coord = {v: k for k, v in nx.get_node_attributes(simple_maze, "label").items()}
-    counts_df["n_actions_available"] = counts_df.maze_position.apply(lambda x: simple_maze.degree(label2coord[x]))
-    # counts["prob"] = counts["count"] / counts.groupby(history_cols)["count"].transform("sum")
-    return counts_df
+    node2available_actions = get_node2action_available(simple_maze, key_type="list")
+    all_states = get_all_valid_histories(simple_maze, n=n_history + 1)
+    all_state_actions = [(*state, a) for state in all_states for a in node2available_actions[state[-1]]]
+    history_cols = [f"history_{i}" for i in range(1, n_history + 1)]
+    state_action_cols = history_cols[::-1] + ["maze_position", "action"]
+    state_action_counts = data_df.groupby(state_action_cols).size()
+    missing_state_actions = list(set(all_state_actions) - set(state_action_counts.index.to_list()))
+    state_action_counts = (
+        pd.concat([state_action_counts, pd.Series(index=pd.MultiIndex.from_tuples(missing_state_actions), data=0)])
+        .sort_index()
+        .reset_index()
+    )
+    state_action_counts.columns = state_action_cols + ["count"]
+    group_sum = state_action_counts.groupby(state_action_cols[:-1])["count"].transform("sum")
+    prob = state_action_counts["count"].div(group_sum).fillna(0)
+    habit_values_df = state_action_counts.copy().drop(columns=["count"])
+    habit_values_df["habit_value"] = prob
+    habit_values_df.set_index(state_action_cols, inplace=True)
+    return habit_values_df
 
 
 def get_subject_decisions_df(
@@ -141,13 +149,12 @@ def get_decisions_df(
 # %% a bit of graph theory
 
 
-def get_all_valid_histories(session, n=3):
-    simple_maze = session.simple_maze()
+def get_all_valid_histories(simple_maze, n=3):
     coord2label = nx.get_node_attributes(simple_maze, "label")
     valid_walks = []
     for w in walks_of_length_n(simple_maze, n):
         # translate to label
-        walk = [coord2label[n] for n in w]
+        walk = tuple([coord2label[n] for n in w])
         valid_walks.append(walk)
     return valid_walks
 
@@ -155,7 +162,7 @@ def get_all_valid_histories(session, n=3):
 def walks_of_length_n(G, n, sources=None):
     """
     Yield all node sequences (tuples) of length n that are valid walks in G.
-    Walks may revisit nodes/edges.
+    Walks may revisit nodes.
     If sources is None, start from every node in G.
     """
     if n <= 0:
@@ -173,3 +180,39 @@ def walks_of_length_n(G, n, sources=None):
         for nbr in G.neighbors(last):
             # extend
             frontier.append(seq + (nbr,))
+
+
+# %% More untility fns
+
+
+def get_node2action_available(simple_maze, key_type="dict"):
+    """
+    Returns a dict of the available directions at each node in the maze.
+    The keys are the available directions ('N', 'S', 'E', 'W') and the
+    values are True if the direction is available and False otherwise.
+    """
+    assert key_type in ["dict", "list"], "key_type must be either 'dict' or 'list'"
+    node_coord2label = nx.get_node_attributes(simple_maze, "label")
+    node2NSEW_available = {}
+    for node in simple_maze.nodes:
+        neighbors = list(simple_maze.neighbors(node))
+        actions = []
+        node_NSEW2available = {"N": False, "S": False, "E": False, "W": False}
+        for neighbor in neighbors:
+            if neighbor[0] == node[0] + 1:
+                node_NSEW2available["E"] = True
+                actions.append("E")
+            if neighbor[0] == node[0] - 1:
+                node_NSEW2available["W"] = True
+                actions.append("W")
+            if neighbor[1] == node[1] + 1:
+                node_NSEW2available["N"] = True
+                actions.append("N")
+            if neighbor[1] == node[1] - 1:
+                node_NSEW2available["S"] = True
+                actions.append("S")
+        if key_type == "dict":
+            node2NSEW_available[node_coord2label[node]] = node_NSEW2available
+        elif key_type == "list":
+            node2NSEW_available[node_coord2label[node]] = actions
+    return node2NSEW_available

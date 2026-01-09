@@ -300,27 +300,36 @@ def get_forward_bias_values(prev_action):
 
 
 # %% strategy utility functions
-def get_node2action_available(simple_maze):
+def get_node2action_available(simple_maze, key_type="dict"):
     """
     Returns a dict of the available directions at each node in the maze.
     The keys are the available directions ('N', 'S', 'E', 'W') and the
     values are True if the direction is available and False otherwise.
     """
+    assert key_type in ["dict", "list"], "key_type must be either 'dict' or 'list'"
     node_coord2label = nx.get_node_attributes(simple_maze, "label")
     node2NSEW_available = {}
     for node in simple_maze.nodes:
         neighbors = list(simple_maze.neighbors(node))
+        actions = []
         node_NSEW2available = {"N": False, "S": False, "E": False, "W": False}
         for neighbor in neighbors:
             if neighbor[0] == node[0] + 1:
                 node_NSEW2available["E"] = True
+                actions.append("E")
             if neighbor[0] == node[0] - 1:
                 node_NSEW2available["W"] = True
+                actions.append("W")
             if neighbor[1] == node[1] + 1:
                 node_NSEW2available["N"] = True
+                actions.append("N")
             if neighbor[1] == node[1] - 1:
                 node_NSEW2available["S"] = True
-        node2NSEW_available[node_coord2label[node]] = node_NSEW2available
+                actions.append("S")
+        if key_type == "dict":
+            node2NSEW_available[node_coord2label[node]] = node_NSEW2available
+        elif key_type == "list":
+            node2NSEW_available[node_coord2label[node]] = actions
     return node2NSEW_available
 
 
