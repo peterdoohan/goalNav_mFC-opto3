@@ -13,6 +13,14 @@ from GridMaze.analysis.strategies import habits as sh
 
 # %% Global variables
 
+NAV_STRATEGIES = [
+    "vector",
+    "structure",
+    "habit",
+    "backtracking_penalty",
+    "forward_bias",
+]
+
 # %% session level navigation strategies df
 
 
@@ -23,7 +31,7 @@ def get_session_navigation_strategies_df(
         "structure",
         "backtracking_penalty",
         "forward_bias",
-        "habits",
+        "habit",
     ],
     n_history=2,
     remove_edge_backtracks=True,
@@ -51,9 +59,9 @@ def get_session_navigation_strategies_df(
 
     # define general value mapping function
     def _get_values(row, strategy):
-        if strategy == "subject_choices":
+        if strategy == "subject_choice":
             return get_subject_choices(row[("action", "")])
-        elif strategy == "optimal_actions":
+        elif strategy == "optimal_action":
             return get_optimal_actions(
                 row[("location", "")],
                 row[("goal", "")],
@@ -88,7 +96,7 @@ def get_session_navigation_strategies_df(
             )
         elif strategy == "forward_bias":
             return get_forward_bias_values(row[("previous_action", "")])
-        elif strategy == "habits":
+        elif strategy == "habit":
             histories = [row[(f"history", i)] for i in range(1, n_history + 1)]
             return get_habit_values(
                 tuple(histories[::-1]),  # reverse to get correct order
@@ -100,7 +108,7 @@ def get_session_navigation_strategies_df(
 
     value_dfs = []
     # get values subject_choice, optimal_choice and availability + requested strats for all choices
-    for v in ["subject_choices", "optimal_actions", "available"] + strategies:
+    for v in ["subject_choice", "optimal_action", "available"] + strategies:
         df = pd.DataFrame(init_df.apply(_get_values, axis=1, strategy=v).to_list())
         df.columns = pd.MultiIndex.from_product([[v], df.columns])
         value_dfs.append(df)

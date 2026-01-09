@@ -1,83 +1,106 @@
 """
-This moduel models choices during maze navigation as a function of vector based and shortest path based strategies.
-And visualizes the results.
+This moduel models choices during maze navigation as a function of different strategies
 """
 
 # %% Imports
 import sys
-import json
 import numpy as np
-import pandas as pd
 from scipy.optimize import minimize
 from GridMaze.analysis.core import get_sessions as gs
-import matplotlib.pyplot as plt
-import seaborn as sns
-from pingouin import mixed_anova
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy import stats
-from matplotlib.lines import Line2D
+from GridMaze.analysis.strategies import get_input_data as gid
 
 # %% Global variables
-from GridMaze.paths import EXPERIMENT_INFO_PATH
 
 INVALID_TRANSITION = -100
 LOG_MAX_FLOAT = np.log(sys.float_info.max / 2.1)
-
-
-with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
-    SUBJECT_IDS = json.load(infile)
-
-SUBJECT_INFO = pd.read_csv(EXPERIMENT_INFO_PATH / "subject_info_df.htsv", sep="\t")
 
 MAX_STIM_DURATION = 30  # seconds
 
 # %% Modelling functions
 
 
-def get_navigation_strategy_weights(df):
+def get_navigation_strategy_weights(
+    navigation_strategies_df,
+    strategies=["vector", "structure", "backtracking_penalty"],
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    stim_trial=False,
+    max_trial_duration=None,
+):
     """
-    Calculates the optimal weights for the vector navigation weight, structure navigation weight, and penalty weight using maximum likelihood estimation.
+    Calculates the weight of each input strategy for explain subject's navigational
+    decisions using maximum likelihood estimation.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-
-    Returns
-    -------
-    dict
-        A dictionary containing the optimal weights for the vector navigation value, structure navigation value, and penalty value.
-        The keys are 'weight_vector', 'weight_structure', and 'weight_penalty', respectively.
+    df should be generated from GridMaze.analysis.strategies.get_input_data.get_navigation_strategies_df
+    using the same strategies as provided here.
     """
-    initial_weights = [0, 0, 0]
-    result = minimize(get_neg_loglikelihood, initial_weights, args=(df,), method="BFGS")
-    optimal_weights = result.x
-    optimal_weight_vector, optimal_weight_structure, optimal_weight_penalty = optimal_weights
-    return {
-        "weight_vector": optimal_weight_vector,
-        "weight_structure": optimal_weight_structure,
-        "weight_penalty": optimal_weight_penalty,
-    }
+    # filter input data
+    df = navigation_strategies_df.copy()
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    if max_trial_duration is not None:
+        df = df[df.time_in_trial.le(max_trial_duration)]
+    if stim_trial is not None:
+        assert isinstance(stim_trial, bool)
+        if stim_trial:
+            df = df[df.stim_trial]
+        else:
+            df = df[~df.stim_trial]
+
+    # fit weights to data
+    initial_weights = np.zeros(len(strategies))
+    result = minimize(
+        get_neg_loglikelihood,
+        initial_weights,
+        args=(strategies, df),
+        method="BFGS",
+    )
+    return {s: w for s, w in zip(strategies, result.x)}
 
 
-def get_neg_loglikelihood(weights, df):
+def get_neg_loglikelihood(weights, strategies, df):
     """
-    Calculates the negative log likelihood of the data given the vector_navigation, structure_navigation and penalty_weights.
+    Minimal generalisation: weights is an iterable of scalars, strategies is an iterable
+    of matching strategy name strings. Assumes `INVALID_TRANSITION` and `softmax`
+    are defined in the same scope as in your original code.
+    """
+    if len(weights) != len(strategies):
+        raise ValueError("weights and strategies must have same length")
 
-    Parameters
-    ----------
-    weights : tuple
-        A tuple of three floats representing the weights for the vector navigation value, structure navigation value, and penalty value, respectively.
-    sessions : list of Session
-        A list of Session objects for which to calculate the negative log likelihood.
-    stim_on : bool, to include choices where opto stim was on or off (False)
+    # start with zeros and accumulate weighted strategy columns
+    V = np.zeros(len(df), dtype=float)
+    for w, s in zip(weights, strategies):
+        if s not in df.columns:
+            raise KeyError(f"strategy '{s}' not found in input df")
+        V += w * df[s].to_numpy(dtype=float)
 
-    Returns
-    -------
-    float
-        The negative log likelihood of the data given the weights.
+    # action availability handling (imposed by maze struct.)
+    A_bool = df.available.to_numpy()
+    A = np.where(A_bool, 0, INVALID_TRANSITION)
+    V = V + A
+
+    # subject choice mask
+    choice_mask = df.subject_choice.to_numpy().astype(bool)
+    P = softmax(V, choice_mask)
+
+    loglikelihood = np.log(P)
+    if np.any(np.isnan(loglikelihood)):
+        raise ValueError("Log likelihood contains NaN(s).")
+    return -np.sum(loglikelihood)
+
+
+def softmax(V, choice_mask):
+    """Calculates softmax probabilities for choices in a given state."""
+    V[V > LOG_MAX_FLOAT] = LOG_MAX_FLOAT  # Protection against overflow in exponential.
+    expV = np.exp(V)
+    return expV[choice_mask] / np.sum(expV, axis=1)
+
+
+# %% old code (keep until new code is working)
+
+
+def get_neg_loglikelihood(weights, df, strategies):
+    """
+    Calculates the negative log likelihood of the data given weighted strategies.
     """
     weight_vector, weight_structure, weight_penalty = weights
     # get neg log likelihood
@@ -93,10 +116,3 @@ def get_neg_loglikelihood(weights, df):
     if np.any(np.isnan(loglikelihood)):
         assert ValueError("Log likelihood contains NaN(s).")
     return -np.sum(np.log(P))
-
-
-def softmax(V, choice_mask):
-    """Calculates softmax probabilities for choices in a given state."""
-    V[V > LOG_MAX_FLOAT] = LOG_MAX_FLOAT  # Protection against overflow in exponential.
-    expV = np.exp(V)
-    return expV[choice_mask] / np.sum(expV, axis=1)
