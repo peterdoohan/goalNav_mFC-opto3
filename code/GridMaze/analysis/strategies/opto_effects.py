@@ -12,16 +12,61 @@ from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.strategies import models
 
 # %% Global Variables
-from GridMaze.paths import EXPERIMENT_INFO_PATH
+from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
 
 with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
     SUBJECT_IDS = json.load(infile)
 
-SUBJECT_INFO = pd.read_csv(EXPERIMENT_INFO_PATH / "subject_info_df.htsv", sep="\t")
-
 MAX_STIM_DURATION = 30  # seconds
 
-# %% Functions
+
+# %%%
+
+
+def get_group_by_stim_strategy_weights(
+    navigation_strategies_df,
+    strategies=["vector", "structure", "backtracking_penalty"],
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    max_trial_duration=None,
+    stim_only=True,
+):
+    """ """
+    # filter data
+    df = navigation_strategies_df.copy()
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    if max_trial_duration is not None:
+        keep_trials = df.groupby("trial_unique_ID").time_in_trial.max().le(max_trial_duration).index
+        df = df[df.trial_unique_ID.isin(keep_trials)]
+    if stim_only:
+        # control trial times in non-stim times when filtering for stim_on
+        # times only in stim trials
+        df = df[df.time_in_trial.le(MAX_STIM_DURATION)]
+
+    # fit nav strategy weights for stim_on and stim_off decisions per subject
+    results = []
+    for subject in SUBJECT_IDS:
+        subj_df = df[df.subject_ID == subject]
+        condition = subj_df.condition.unique()[0]
+        for stim_trial in [True, False]:
+            _df = subj_df[subj_df.stim_trial == stim_trial]
+            if stim_trial and stim_only:
+                _df = _df[_df.stim_on]
+            # fit strategy weights on select data
+            return _df
+            strategy_weights = models.get_navigation_strategy_weights(_df, strategies=strategies)
+            results.append(
+                {
+                    "subject_ID": subject,
+                    "condition": condition,
+                    "stim_trial": stim_trial,
+                    **strategy_weights,
+                }
+            )
+    return pd.DataFrame(results)
+
+
+# %% Old Functions
 
 
 def plot_random_effects_summary(results_df, axes=None):
@@ -118,7 +163,7 @@ def get_random_effects_summary_df(input_data, stim_day_range=(4, np.inf), stim_o
             # fit strategy weights on select data
             strategy_weights = models.get_navigation_strategy_weights(_df)
             strategy_weights["subject_ID"] = subject
-            strategy_weights["condition"] = SUBJECT_INFO.set_index("subject_ID").loc[subject].condition
+            # strategy_weights["condition"] = SUBJECT_INFO.set_index("subject_ID").loc[subject].condition
             strategy_weights["stim_trial"] = stim_trial
             results.append(strategy_weights)
 

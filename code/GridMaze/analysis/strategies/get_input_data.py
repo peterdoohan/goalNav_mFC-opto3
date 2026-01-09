@@ -4,14 +4,20 @@ structure navigation (model-based) stragegies. These dataframes are to be popula
 """
 
 # %% imports
+import json
 import numpy as np
 import pandas as pd
 import networkx as nx
+from joblib import Parallel, delayed
 
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.strategies import habits as sh
 
 # %% Global variables
+from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
+
+with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
+    SUBJECT_IDS = json.load(infile)
 
 NAV_STRATEGIES = [
     "vector",
@@ -20,6 +26,38 @@ NAV_STRATEGIES = [
     "backtracking_penalty",
     "forward_bias",
 ]
+
+# %% get exp level navigation_strategies_df
+
+
+def get_navigation_strategies_df(strategies=NAV_STRATEGIES, n_history=2, sessions=None, verbose=True, n_jobs=-1):
+    """
+    generate navigation strategies df from all expert stim days across subejcts
+    """
+    if sessions is None:
+        if verbose:
+            print("Loading all expert stim sessions...")
+        sessions = gs.get_maze_sessions(
+            subject_IDs="all",
+            stim_only=True,
+            with_data=["navigation_df", "trials_df", "session_info"],
+            must_have_data=True,
+        )
+
+    if n_jobs:
+        dfs = Parallel(n_jobs=n_jobs)(
+            delayed(get_session_navigation_strategies_df)(s, strategies, n_history) for s in sessions
+        )
+    else:
+        dfs = []
+        for s in sessions:
+            if verbose:
+                print(f"Processing session: {s.name}")
+            df = get_session_navigation_strategies_df(s, strategies, n_history)
+            dfs.append(df)
+    navigation_strategies_df = pd.concat(dfs, ignore_index=True)
+    return navigation_strategies_df
+
 
 # %% session level navigation strategies df
 
@@ -51,7 +89,7 @@ def get_session_navigation_strategies_df(
     coord2pos = nx.get_node_attributes(simple_maze, "position")
     all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze))
     opp_actions = {"N": "S", "S": "N", "E": "W", "W": "E"}
-    if "habits" in strategies:
+    if "habit" in strategies:
         habit_values_df = sh.get_habit_values_df(
             session,
             n_history=n_history,
@@ -132,7 +170,7 @@ def get_init_df(
     inital decisions within a trial an appropriate history in the future...
     """
     # load data
-    navigation_df = session.navigation_df
+    navigation_df = session.navigation_df.copy()
     session_info = session.session_info
     simple_maze = session.simple_maze()
     trials_df = session.trials_df.copy()
@@ -154,6 +192,8 @@ def get_init_df(
         start_time = trial_df.iloc[0].time.values[0]
         # filter transitions between nodes
         transitions_df = trial_df[trial_df.maze_position.simple_change]
+        if transitions_df.empty:
+            continue
         transitions_df = transitions_df[transitions_df.maze_position.simple.apply(lambda x: len(x.split("-")) == 1)]
         transitions_df = transitions_df[transitions_df.cardinal_movement_direction.notnull()].reset_index(drop=True)
         locs = transitions_df.maze_position.simple

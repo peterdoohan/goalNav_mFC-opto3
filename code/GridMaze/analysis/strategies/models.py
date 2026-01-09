@@ -14,7 +14,6 @@ from GridMaze.analysis.strategies import get_input_data as gid
 INVALID_TRANSITION = -100
 LOG_MAX_FLOAT = np.log(sys.float_info.max / 2.1)
 
-MAX_STIM_DURATION = 30  # seconds
 
 # %% Modelling functions
 
@@ -22,9 +21,6 @@ MAX_STIM_DURATION = 30  # seconds
 def get_navigation_strategy_weights(
     navigation_strategies_df,
     strategies=["vector", "structure", "backtracking_penalty"],
-    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
-    stim_trial=False,
-    max_trial_duration=None,
 ):
     """
     Calculates the weight of each input strategy for explain subject's navigational
@@ -33,19 +29,7 @@ def get_navigation_strategy_weights(
     df should be generated from GridMaze.analysis.strategies.get_input_data.get_navigation_strategies_df
     using the same strategies as provided here.
     """
-    # filter input data
     df = navigation_strategies_df.copy()
-    if stim_day_range is not None:
-        df = df[df.total_stim_days.between(*stim_day_range)]
-    if max_trial_duration is not None:
-        df = df[df.time_in_trial.le(max_trial_duration)]
-    if stim_trial is not None:
-        assert isinstance(stim_trial, bool)
-        if stim_trial:
-            df = df[df.stim_trial]
-        else:
-            df = df[~df.stim_trial]
-
     # fit weights to data
     initial_weights = np.zeros(len(strategies))
     result = minimize(
@@ -67,7 +51,7 @@ def get_neg_loglikelihood(weights, strategies, df):
         raise ValueError("weights and strategies must have same length")
 
     # start with zeros and accumulate weighted strategy columns
-    V = np.zeros(len(df), dtype=float)
+    V = np.zeros((len(df), 4), dtype=float)
     for w, s in zip(weights, strategies):
         if s not in df.columns:
             raise KeyError(f"strategy '{s}' not found in input df")
@@ -98,21 +82,21 @@ def softmax(V, choice_mask):
 # %% old code (keep until new code is working)
 
 
-def get_neg_loglikelihood(weights, df, strategies):
-    """
-    Calculates the negative log likelihood of the data given weighted strategies.
-    """
-    weight_vector, weight_structure, weight_penalty = weights
-    # get neg log likelihood
-    V_vector = df.vector_navigation_value.to_numpy()
-    V_structure = df.structure_navigation_value.to_numpy()
-    V_penalty = df.penalty_value.to_numpy()
-    A_bool = df.available.to_numpy()
-    A = np.where(A_bool, 0, INVALID_TRANSITION)
-    choice_mask = df.choice_value.to_numpy().astype(bool)
-    V = weight_vector * V_vector + weight_structure * V_structure + weight_penalty * V_penalty + A
-    P = softmax(V, choice_mask)
-    loglikelihood = np.log(P)
-    if np.any(np.isnan(loglikelihood)):
-        assert ValueError("Log likelihood contains NaN(s).")
-    return -np.sum(np.log(P))
+# def get_neg_loglikelihood(weights, df, strategies):
+#     """
+#     Calculates the negative log likelihood of the data given weighted strategies.
+#     """
+#     weight_vector, weight_structure, weight_penalty = weights
+#     # get neg log likelihood
+#     V_vector = df.vector_navigation_value.to_numpy()
+#     V_structure = df.structure_navigation_value.to_numpy()
+#     V_penalty = df.penalty_value.to_numpy()
+#     A_bool = df.available.to_numpy()
+#     A = np.where(A_bool, 0, INVALID_TRANSITION)
+#     choice_mask = df.choice_value.to_numpy().astype(bool)
+#     V = weight_vector * V_vector + weight_structure * V_structure + weight_penalty * V_penalty + A
+#     P = softmax(V, choice_mask)
+#     loglikelihood = np.log(P)
+#     if np.any(np.isnan(loglikelihood)):
+#         assert ValueError("Log likelihood contains NaN(s).")
+#     return -np.sum(np.log(P))
