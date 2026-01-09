@@ -9,6 +9,7 @@ import seaborn as sns
 from pingouin import mixed_anova
 
 from GridMaze.analysis.core import get_sessions as gs
+from GridMaze.analysis.core import plotting as cp
 from GridMaze.analysis.strategies import models
 
 # %% Global Variables
@@ -25,10 +26,11 @@ MAX_STIM_DURATION = 30  # seconds
 
 def get_group_by_stim_strategy_weights(
     navigation_strategies_df,
-    strategies=["vector", "structure", "habit", "backtracking_penalty", "forward_bias"],
+    strategies=["vector", "structure", "habit", "backtracking_penalty"],
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     max_trial_duration=None,
     stim_only=True,
+    quick_plot=True,
 ):
     """ """
     # filter data
@@ -62,7 +64,16 @@ def get_group_by_stim_strategy_weights(
                     **strategy_weights,
                 }
             )
-    return pd.DataFrame(results)
+    results_df = pd.DataFrame(results)
+    if quick_plot:
+        for y in strategies:
+            cp.plot_group_by_stim(
+                results_df,
+                y,
+                print_stats=True,
+                stim_color="orange",
+            )
+    return results_df
 
 
 # %% Old Functions
