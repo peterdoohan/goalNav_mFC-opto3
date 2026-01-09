@@ -1,28 +1,38 @@
 """ """
 
 # %% Imports
+import json
 import numpy as np
 import pandas as pd
 import networkx as nx
-from joblib import Parallel, delayed
 from collections import deque
+from joblib import Parallel, delayed
 
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.processing import get_trajectory_decisions_dfs as td
 
 # %% Global Variables
+from GridMaze.paths import RESULTS_PATH, EXPERIMENT_INFO_PATH
 
+with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
+    SUBJECT_IDS = json.load(f)
 
 # %% Functions
 
 
 def get_habit_values_df(
     session,
-    subject_df,
+    subject_df=None,
     stim_day_range=None,
     n_history=2,
 ):
     """ """
+    if subject_df is None:
+        subject_df = get_subject_decisions_df(
+            session.subject_ID,
+            n_history=n_history,
+            save=False,
+        )
     assert f"history_{n_history}" in subject_df.columns
     # filter subject df
     data_df = subject_df.copy()
@@ -44,7 +54,9 @@ def get_habit_values_df(
     state_action_counts = data_df.groupby(state_action_cols).size()
     missing_state_actions = list(set(all_state_actions) - set(state_action_counts.index.to_list()))
     state_action_counts = (
-        pd.concat([state_action_counts, pd.Series(index=pd.MultiIndex.from_tuples(missing_state_actions), data=0)])
+        pd.concat(
+            [state_action_counts, pd.Series(index=pd.MultiIndex.from_tuples(missing_state_actions), data=0)],
+        )
         .sort_index()
         .reset_index()
     )
@@ -61,9 +73,15 @@ def get_subject_decisions_df(
     subject_ID,
     navigation_only=True,
     remove_stim_trials=True,
-    n_history=10,
+    n_history=5,
     n_jobs=-1,
+    save=False,
 ):
+    """ """
+    save_path = RESULTS_PATH / "strategies" / "subject_decisions_dfs" / f"{subject_ID}.parquet"
+    if not save and save_path.exists():
+        return pd.read_parquet(save_path)
+
     sessions = gs.get_maze_sessions(
         subject_IDs=[subject_ID],
         total_stim_days="all",
@@ -82,7 +100,33 @@ def get_subject_decisions_df(
             ignore_index=True,
         )
 
+    if save:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(save_path)
+
     return df
+
+
+def _save_all_subject_decision_dfs(
+    navigation_only=True,
+    remove_stim_trials=True,
+    n_history=5,
+    n_jobs=-1,
+    verbose=True,
+):
+    for subject_ID in SUBJECT_IDS:
+        if verbose:
+            print(f"Processing subject {subject_ID}...")
+        get_subject_decisions_df(
+            subject_ID,
+            navigation_only,
+            remove_stim_trials,
+            n_history,
+            n_jobs,
+            save=True,
+        )
+    if verbose:
+        print("All subject decision dfs saved.")
 
 
 # %%

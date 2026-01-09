@@ -7,8 +7,9 @@ structure navigation (model-based) stragegies. These dataframes are to be popula
 import numpy as np
 import pandas as pd
 import networkx as nx
-from GridMaze.maze import representations as mr
+
 from GridMaze.analysis.core import get_sessions as gs
+from GridMaze.analysis.strategies import habits as sh
 
 # %% Global variables
 
@@ -22,9 +23,9 @@ def get_session_navigation_strategies_df(
         "structure",
         "backtracking_penalty",
         "forward_bias",
-        # "habits",
+        "habits",
     ],
-    habits_n_back=3,
+    n_history=2,
     remove_edge_backtracks=True,
     ignore_final_step=True,
 ):
@@ -33,14 +34,20 @@ def get_session_navigation_strategies_df(
         session,
         remove_edge_backtracks=remove_edge_backtracks,
         ignore_final_step=ignore_final_step,
+        n_history=max(1, n_history),
     )
     # get further variables
     simple_maze = session.simple_maze()
-    node2action_available = get_node2action_available(simple_maze)
+    node2action_available = sh.get_node2action_available(simple_maze)
     label2coord = {v: k for k, v in nx.get_node_attributes(simple_maze, "label").items()}
     coord2pos = nx.get_node_attributes(simple_maze, "position")
     all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze))
     opp_actions = {"N": "S", "S": "N", "E": "W", "W": "E"}
+    if "habits" in strategies:
+        habit_values_df = sh.get_habit_values_df(
+            session,
+            n_history=n_history,
+        )
 
     # define general value mapping function
     def _get_values(row, strategy):
@@ -82,7 +89,12 @@ def get_session_navigation_strategies_df(
         elif strategy == "forward_bias":
             return get_forward_bias_values(row[("previous_action", "")])
         elif strategy == "habits":
-            raise NotImplementedError
+            histories = [row[(f"history", i)] for i in range(1, n_history + 1)]
+            return get_habit_values(
+                tuple(histories[::-1]),  # reverse to get correct order
+                row[("location", "")],
+                habit_values_df,
+            )
         else:
             raise ValueError(f"Unknown strategy: {strategy}")
 
@@ -101,11 +113,15 @@ def get_init_df(
     session,
     remove_edge_backtracks=True,
     ignore_final_step=True,
+    n_history=2,
 ):
     """
     initalise navigation_strategies_df with node transitions defined trial by trial
     with goal and other info specified too, that can use used to define strategies
     for modelling subject's choices
+
+    note currently histories are defined with trial, we could fix this later to give
+    inital decisions within a trial an appropriate history in the future...
     """
     # load data
     navigation_df = session.navigation_df
@@ -134,18 +150,21 @@ def get_init_df(
         transitions_df = transitions_df[transitions_df.cardinal_movement_direction.notnull()].reset_index(drop=True)
         locs = transitions_df.maze_position.simple
         actions = transitions_df.cardinal_movement_direction
-        prev_actions = actions.shift(1)
+        histories = [locs.shift(i) for i in range(1, n_history + 1)]
+        prev_action = actions.shift(1)
         times = transitions_df.time
         if remove_edge_backtracks:
             # node transitions can be double counted if a mouse backtacks on an edge or if mouse position oscillates between
             # an adjacent edge and node, if desired, remove these backtrack to give very clean trajectory transitions and choices
             backtrack_mask = locs == locs.shift(1)
             locs = locs[~backtrack_mask]
+            histories = [locs.shift(i) for i in range(1, n_history + 1)]
             actions = pd.Series(get_trajectory_actions(locs, label2coord=label2coord))
-            prev_actions = actions.shift(1)
+            prev_action = actions.shift(1)
             times = times[~backtrack_mask]
         if ignore_final_step:
-            locs, actions, prev_actions, times = locs[:-1], actions[:-1], prev_actions[:-1], times[:-1]
+            locs, actions, prev_action, times = locs[:-1], actions[:-1], prev_action[:-1], times[:-1]
+            histories = [h[:-1] for h in histories]
             if locs.empty:
                 continue
         # build df
@@ -158,8 +177,10 @@ def get_init_df(
         _df[("stim_on", "")] = choice_time2stim_on(trials_df.reset_index(), times)
         _df[("location", "")] = locs.values
         _df[("action", "")] = actions.values
-        _df[("previous_action", "")] = prev_actions.values
+        _df[("previous_action", "")] = prev_action.values
         _df[("nth_visit", "")] = locs.to_frame().groupby("simple").cumcount()
+        for i in range(1, n_history + 1):
+            _df[(f"history", i)] = histories[i - 1].values
         dfs.append(_df)
     # combine with session level info
     init_df = pd.concat(dfs, ignore_index=True)
@@ -183,7 +204,7 @@ def get_init_df(
 def get_available(loc, node2action_available=None, simple_maze=None):
     if node2action_available is None:
         assert simple_maze is not None
-        node2action_available = get_node2action_available(simple_maze)
+        node2action_available = sh.get_node2action_available(simple_maze)
     return node2action_available[loc]
 
 
@@ -290,47 +311,32 @@ def get_structure_values(loc, goal, label2coord=None, simple_maze=None, all_shor
 
 
 def get_backtracking_penalty_values(prev_action, opp_actions=None):
+    if prev_action is None:
+        return {cdir: 0 for cdir in ["N", "S", "E", "W"]}
     if opp_actions is None:
         opp_actions = {"N": "S", "S": "N", "E": "W", "W": "E"}
     return {cdir: -1 if cdir == opp_actions.get(prev_action) else 0 for cdir in ["N", "S", "E", "W"]}
 
 
 def get_forward_bias_values(prev_action):
+    if prev_action is None:
+        return {cdir: 0 for cdir in ["N", "S", "E", "W"]}
     return {cdir: 1 if cdir == prev_action else 0 for cdir in ["N", "S", "E", "W"]}
 
 
+def get_habit_values(histories, loc, habit_values_df):
+    """ """
+    values = {}
+    for action in ["N", "S", "E", "W"]:
+        indx = (*histories, loc, action)
+        if indx not in habit_values_df.index:
+            values[action] = 0
+        else:
+            values[action] = float(habit_values_df.loc[indx, "habit_value"])
+    return values
+
+
 # %% strategy utility functions
-def get_node2action_available(simple_maze, key_type="dict"):
-    """
-    Returns a dict of the available directions at each node in the maze.
-    The keys are the available directions ('N', 'S', 'E', 'W') and the
-    values are True if the direction is available and False otherwise.
-    """
-    assert key_type in ["dict", "list"], "key_type must be either 'dict' or 'list'"
-    node_coord2label = nx.get_node_attributes(simple_maze, "label")
-    node2NSEW_available = {}
-    for node in simple_maze.nodes:
-        neighbors = list(simple_maze.neighbors(node))
-        actions = []
-        node_NSEW2available = {"N": False, "S": False, "E": False, "W": False}
-        for neighbor in neighbors:
-            if neighbor[0] == node[0] + 1:
-                node_NSEW2available["E"] = True
-                actions.append("E")
-            if neighbor[0] == node[0] - 1:
-                node_NSEW2available["W"] = True
-                actions.append("W")
-            if neighbor[1] == node[1] + 1:
-                node_NSEW2available["N"] = True
-                actions.append("N")
-            if neighbor[1] == node[1] - 1:
-                node_NSEW2available["S"] = True
-                actions.append("S")
-        if key_type == "dict":
-            node2NSEW_available[node_coord2label[node]] = node_NSEW2available
-        elif key_type == "list":
-            node2NSEW_available[node_coord2label[node]] = actions
-    return node2NSEW_available
 
 
 def get_neighbor_cdir(location_coord, neigbour_coord):
@@ -345,10 +351,7 @@ def get_neighbor_cdir(location_coord, neigbour_coord):
         return "N"
 
 
-# %% Main function
-
-
-# %% utility functions
+# %% other utility functions
 
 
 def choice_time2stim_on(trials_df, node_choice_times):
