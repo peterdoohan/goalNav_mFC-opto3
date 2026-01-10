@@ -2,11 +2,10 @@
 
 # %% Imports
 import json
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pingouin import mixed_anova
 
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.core import plotting as cp
@@ -54,6 +53,7 @@ def get_group_by_stim_strategy_weights(
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     max_trial_duration=None,
     stim_only=True,
+    subsample_non_stim_trials=False,
 ):
     """ """
     # filter data
@@ -63,6 +63,12 @@ def get_group_by_stim_strategy_weights(
     if max_trial_duration is not None:
         keep_trials = df.groupby("trial_unique_ID").time_in_trial.max().le(max_trial_duration).index
         df = df[df.trial_unique_ID.isin(keep_trials)]
+    if subsample_non_stim_trials:
+        # more data in non-stim condition, optionally balance data in conditions
+        # to check for sampling bias effects
+        stim_trials = df[df.stim_trial].trial_unique_ID.to_list()
+        keep_non_stim_trials = _subsample_non_stim_trials(df)
+        df = df[df.trial_unique_ID.isin(stim_trials + keep_non_stim_trials)]
     if stim_only:
         # control trial times in non-stim times when filtering for stim_on
         # times only in stim trials
@@ -91,4 +97,25 @@ def get_group_by_stim_strategy_weights(
     return results_df
 
 
-# %% Old Functions
+# %% data subsampling functions
+
+
+def _subsample_non_stim_trials(navigation_strategies_df, seed=0):
+    """
+    subsamples non-stim trials to match the number of stim trials
+    stratified by subject and goal to ensure this is balanced across conditions
+    """
+    df = navigation_strategies_df.copy()
+    unique_trials_df = df[["subject_ID", "goal", "stim_trial", "trial_unique_ID"]].drop_duplicates()
+    stim_df = unique_trials_df[unique_trials_df.stim_trial].droplevel(1, axis=1)
+    norm_df = unique_trials_df[~unique_trials_df.stim_trial].droplevel(1, axis=1)
+    stim_trial_counts = stim_df.groupby(["subject_ID", "goal"]).size().reset_index(name="trial_counts")
+
+    trials_with_counts = norm_df.merge(stim_trial_counts, on=["subject_ID", "goal"], how="inner")
+
+    sampled_df = (
+        trials_with_counts.groupby(["subject_ID", "goal"], group_keys=False)
+        .apply(lambda g: g.sample(n=int(g["trial_counts"].iloc[0]), random_state=seed), include_groups=False)
+        .reset_index(drop=True)
+    )
+    return sampled_df.trial_unique_ID.tolist()
