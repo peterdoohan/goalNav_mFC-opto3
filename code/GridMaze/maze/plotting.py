@@ -164,6 +164,7 @@ def plot_directed_heatmap(
     simple_maze,
     place_direction_values,
     ax=None,
+    place_agg="mean",
     fixed_vmax=False,
     fixed_vmin=False,
     allow_negative=False,
@@ -192,7 +193,12 @@ def plot_directed_heatmap(
     # translate average location values to colors for heatmap
     pd_values = place_direction_values.copy()
     label2coord = mr.get_maze_label2coord(simple_maze)
-    place_values = pd_values.groupby("maze_position").mean()
+    if place_agg == "mean":
+        place_values = pd_values.groupby("maze_position").mean()
+    elif place_agg == "sum":
+        place_values = pd_values.groupby("maze_position").sum()
+    else:
+        raise ValueError("place_agg must be 'mean' or 'sum'")
     place_df = pd.DataFrame(
         index=place_values.index.map(label2coord).to_flat_index(), columns=["value", "color", "position"]
     )
