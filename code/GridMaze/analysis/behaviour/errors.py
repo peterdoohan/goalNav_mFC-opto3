@@ -3,6 +3,7 @@ Quant of errors during navigation
 """
 
 # %% Imports
+import json
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
@@ -15,8 +16,93 @@ from GridMaze.maze import representations as mr
 
 # %% Global Variables
 
+MAX_STIM_DURATION = 30
 
-# %%
+from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
+
+with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
+    SUBJECT_IDS = json.load(infile)
+
+# %% eogcentric error map functions
+
+
+def test(error_df):
+    """ """
+    df = _filter_error_data(error_df, maze_name="maze_2", stim_day_range=(4, gs.TOTAL_STIM_DAYS), goal=None)
+    return
+
+
+# %% allocentric error map functions
+
+
+def plot_delta_delta_allocentric_error_map(
+    error_df,
+    maze_name="maze_1",
+    stim_day_range=(4, gs.TOTAL_STIM_DAYS),
+    goal=None,
+    ax=None,
+):
+    """
+    note looking at errors allocentrically divides up the data to the point where
+    we are very limited, will be more productive to look at error maps defined egocentrically
+    where we can collapose data across goals and mazes more easily
+    """
+    # set up fig
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(5, 5))
+    # filter data
+    df = _filter_error_data(error_df, maze_name=maze_name, stim_day_range=stim_day_range, goal=goal)
+    # further filter by time < max stim duration (30s) in both conditions
+    df = df[df.time_in_trial <= MAX_STIM_DURATION]
+    trial_type_counts = (
+        df[["trial_unique_ID", "condition", "stim_trial"]]
+        .drop_duplicates()
+        .droplevel(1, axis=1)
+        .groupby(["condition", "stim_trial"])
+        .count()
+    ).trial_unique_ID
+    error_counts = (
+        df.groupby([("condition", ""), ("stim_on", ""), ("maze_position", "simple")]).size().unstack(level=[0, 1])
+    ).dropna()  # remove locations with no errors in some conditions
+    # normalise to errors per trial
+    for cond in ["control", "opto"]:
+        for stim_trial in [True, False]:
+            error_counts[(cond, stim_trial)] = error_counts[(cond, stim_trial)].div(
+                trial_type_counts.loc[(cond, stim_trial)]
+            )
+    # compute delta errors across stim within condition
+    # then deleta delta errors across conditions
+    delta_delta = error_counts.stack(level=0, future_stack=True).diff(axis=1)[True].unstack().diff(axis=1)["opto"]
+    # account for missing locs (not enough errors or edge)
+    simple_maze = mr.get_simple_maze(maze_name)
+    all_locs = mr.get_maze_locations(simple_maze)
+    missing_locs = list(set(all_locs) - set(delta_delta.index.to_list()))
+    dd_plot = pd.concat([delta_delta, pd.Series(0, index=missing_locs)], axis=0).sort_index()
+    # plot simple heatmap
+    _max = dd_plot.abs().max()
+    mp.plot_simple_heatmap(
+        simple_maze,
+        dd_plot,
+        ax=ax,
+        vmin=-_max,
+        vmax=_max,
+        colormap="coolwarm",
+        value_label="ΔΔ errors",
+        allow_negative=True,
+    )
+
+
+def plot_delta_delta_error_map(
+    error_df,
+    maze_name="maze_1",
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    goal=None,
+    angle_color="black",
+    normalise=True,
+    min_count=10,
+    ax=None,
+):
+    return
 
 
 def plot_raw_error_map(
@@ -25,6 +111,7 @@ def plot_raw_error_map(
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     goal=None,
     angle_color="black",
+    normalise=True,
     min_count=10,
     ax=None,
 ):
@@ -40,6 +127,8 @@ def plot_raw_error_map(
     all_locs = mr.get_maze_locations(simple_maze)
     missing_locs = list(set(all_locs) - set(_error_counts.index.to_list()))
     error_counts = pd.concat([_error_counts, pd.Series(0, index=missing_locs)], axis=0).sort_index()
+    if normalise:
+        error_counts = error_counts.div(error_counts.sum())
     mp.plot_simple_heatmap(simple_maze, error_counts, ax=ax, colormap="silver2red", value_label="error count")
     # plot error direction markers
     angle_summary = df.groupby(("maze_position", "simple")).apply(circular_summary, include_groups=True)
@@ -157,6 +246,8 @@ def get_session_error_df(
         if not np.any(error_mask):
             continue
         error_times = td_df.time.values[error_mask]
+        cue_time = trials_df.loc[trial, ("time", "cue")]
+        times_in_trial = error_times - cue_time  # align to trial start
         # use navigation df to get higher-res info about loc, etc. at error times
         nav_df = navigation_df[(navigation_df.trial == trial) & (navigation_df.trial_phase == "navigation")].copy()
         error_df = nav_df.loc[np.array([nav_df.time.sub(et).abs().idxmin() for et in error_times])]
@@ -179,7 +270,8 @@ def get_session_error_df(
                 ("angle_to_goal", "allocentric"),
                 ("angle_to_goal", "egocentric"),
             ]
-        ]
+        ].copy()
+        _df[("time_in_trial", "")] = times_in_trial
         results.append(_df)
     error_df = pd.concat(results, axis=0).reset_index(drop=True)
     error_df[("stim_trial")] = error_df.trial.map(trials_df.stim_trial.to_dict())
