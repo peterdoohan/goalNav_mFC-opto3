@@ -18,6 +18,9 @@ from GridMaze.analysis.core import get_sessions as gs
 
 def plot_trial_distance_to_goal(session, trial=2, ax=None):
     """ """
+    trials_df = session.trials_df.copy()
+    trials_df.set_index("trial", inplace=True)
+    cue_time = trials_df.loc[trial, ("time", "cue")]
     # filter for trial data
     df = session.trajectory_decisions_df.copy()
     trial_df = df[(df.trial == trial) & (df.trial_phase == "navigation")]
@@ -34,7 +37,7 @@ def plot_trial_distance_to_goal(session, trial=2, ax=None):
     # plot steps over time
     steps = trial_df.steps_to_goal.values
     time = trial_df.time.values
-    time = time - time[0]  # align to trial start
+    time = time - cue_time  # align to trial start
     stim_on = trial_df.stim_on.values
     if np.any(stim_on):
         ax.plot(time[stim_on], steps[stim_on], color="#0077FF", lw=6, alpha=0.5)
@@ -50,7 +53,27 @@ def plot_trial_distance_to_goal(session, trial=2, ax=None):
     return
 
 
-def get_error_mask(steps, n=4):
+def get_error_times(session, trial, rel=True):
+    """
+    convience function
+    """
+    # filter for trial data
+    df = session.trajectory_decisions_df.copy()
+    trial_df = df[(df.trial == trial) & (df.trial_phase == "navigation")]
+    error_mask = get_error_mask(trial_df.steps_to_goal)
+    if error_mask.sum() == 0:
+        return None
+    error_times = trial_df.time.values[error_mask]
+    if rel:
+        # align times to trial start
+        trials_df = session.trials_df.copy()
+        trials_df.set_index("trial", inplace=True)
+        cue_time = trials_df.loc[trial, ("time", "cue")]
+        error_times = error_times - cue_time
+    return error_times
+
+
+def get_error_mask(steps, n=2):
     """
     True only at the first increase after n consecutive decreases.
     """

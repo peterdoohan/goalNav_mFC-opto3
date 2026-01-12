@@ -8,9 +8,6 @@ import pandas as pd
 import networkx as nx
 from matplotlib import pyplot as plt
 from scipy.ndimage import gaussian_filter1d
-from scipy.signal import savgol_filter
-from scipy.interpolate import interp1d
-from scipy.interpolate import splprep, splev
 
 from matplotlib.collections import LineCollection
 from matplotlib.colors import Normalize
@@ -18,6 +15,7 @@ from matplotlib.colors import Normalize
 from GridMaze.maze import representations as mr
 from GridMaze.maze import plotting as mp
 from GridMaze.analysis.processing.get_navigation_strategies_dfs import get_neighbor_cdir
+from GridMaze.analysis.behaviour import errors as be
 
 from matplotlib.patches import Wedge, FancyArrowPatch
 
@@ -33,6 +31,7 @@ def plot_fancy_trial_trajectory(
     trial=1,
     smooth_SD=10,
     t_range=None,
+    plot_errors=False,
     ax=None,
 ):
     """ """
@@ -101,6 +100,24 @@ def plot_fancy_trial_trajectory(
         ax.set_title(f"Trial {trial} (t={t_range[0]}-{t_range[1]}s)", fontsize=8)
     else:
         ax.set_title(f"Trial {trial}", fontsize=8)
+
+    if plot_errors:
+        error_times = be.get_error_times(session, trial=trial, rel=False)
+        if t_range:
+            error_times = [
+                et for et in error_times if (et - df.time.min() >= t_range[0]) and (et - df.time.min() <= t_range[1])
+            ]
+        if error_times is not None:
+            error_df = df.loc[np.array([(df.time - et).abs().idxmin() for et in error_times])]
+            ax.scatter(
+                error_df.centroid_position.x.values,
+                error_df.centroid_position.y.values,
+                marker="x",
+                s=100,
+                color="m",
+                alpha=0.8,
+                zorder=10,
+            )
     return
 
 
