@@ -437,7 +437,7 @@ def plot_trial_distance_to_goal(session, trial=2, ax=None):
     ax.plot(time, steps, color="black", lw=1)
     ax.scatter(time, steps, color="black", s=0.75)
     # plot errors
-    error_mask = get_error_mask(trial_df.steps_to_goal)
+    error_mask = get_error_mask(trial_df.steps_to_goal, n=1)
     if np.any(error_mask):
         etime = time[error_mask]
         y = np.clip(steps[error_mask] - 1.5, a_min=0, a_max=None)

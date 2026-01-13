@@ -221,8 +221,9 @@ def get_decisions_df(
         decisions_df = decisions_df[~decisions_df.trial.isin(stim_trials)]
 
     # add position histories
-    for i in range(1, n_history + 1):
-        decisions_df[f"history_{i}"] = decisions_df.groupby("trial_unique_ID")["maze_position"].shift(i)
+    if n_history is not None:
+        for i in range(1, n_history + 1):
+            decisions_df[f"history_{i}"] = decisions_df.groupby("trial_unique_ID")["maze_position"].shift(i)
 
     return decisions_df
 
