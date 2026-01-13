@@ -8,8 +8,9 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 from matplotlib import pyplot as plt
+from scipy.ndimage import gaussian_filter
 from matplotlib.patches import FancyArrowPatch, Circle
-from pyparsing import C
+
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.maze import plotting as mp
 from GridMaze.maze import representations as mr
@@ -26,10 +27,126 @@ with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
 # %% eogcentric error map functions
 
 
-def test(error_df):
+def test(error_df, smooth=True, ax=None):
     """ """
     df = _filter_error_data(error_df, maze_name="maze_2", stim_day_range=(4, gs.TOTAL_STIM_DAYS), goal=None)
-    return
+    counts, dist_edges, angle_edges = bin_egocentric_errors(df)
+    if smooth:
+        counts = gaussian_filter(counts, sigma=(1.0, 1.0), mode=("reflect", "wrap"))
+    # plotting
+    angle_edges_rad = np.deg2rad(angle_edges)  # shape (n_theta_bins+1,)
+    # Build the meshgrid expected by pcolormesh: (theta_edges, r_edges)
+    # Note: pcolormesh expects grid shaped (len(r_edges), len(theta_edges))
+    Theta, R = np.meshgrid(angle_edges_rad, dist_edges)
+
+    # set up fig
+    if ax is None:
+        fig, ax = plt.subplots(subplot_kw=dict(projection="polar"), figsize=(3, 3))
+    ax.grid(False)
+    ax.set_thetagrids([0, 90, 180, 270], labels=["0", "90", "180", "270"])
+    r_max = dist_edges[-1]
+    ax.set_ylim(0, r_max)
+    ax.set_rticks([0, r_max / 2, r_max])
+    ax.set_rlabel_position(180)
+    ax.spines["polar"].set_visible(False)
+
+    # Plot with pcolormesh
+    pcm = ax.pcolormesh(Theta, R, counts, shading="auto", cmap="Purples")
+
+    # Colorbar
+    cbar = fig.colorbar(pcm, ax=ax, pad=0.12, fraction=0.03, shrink=0.55)
+    cbar.outline.set_visible(False)
+    cbar.ax.tick_params(length=0, labelsize=7)
+
+    # test hd vector field plotting
+
+
+def get_binned_hd_circmean(
+    df,
+    dist_metric,
+    dist_range=(0, 1.4),
+    dist_bins=8,
+    angle_bins=36,
+):
+    """ """
+    distances = df.distance_to_goal[dist_metric].values
+    angles = df.angle_to_goal.allocentric.values
+    hd = df.head_direction.values
+    angles = np.mod(angles, 360.0)
+    hd = np.mod(hd, 360.0)
+
+    # define bin edges
+    dist_edges = np.linspace(dist_range[0], dist_range[1], dist_bins + 1)
+    angle_edges = np.linspace(0.0, 360.0, angle_bins + 1)
+
+    # compute bin indices for each row (use digitize)
+    r_idx = np.digitize(distances, dist_edges) - 1  # bins: 0..n_r-1
+    t_idx = np.digitize(angles, angle_edges) - 1  # bins: 0..n_theta-1
+
+    n_r = len(dist_edges) - 1
+    n_t = len(angle_edges) - 1
+
+    # initialize outputs
+    counts = np.zeros((n_r, n_t), dtype=int)
+    sum_sin = np.zeros((n_r, n_t), dtype=float)
+    sum_cos = np.zeros((n_r, n_t), dtype=float)
+
+    # loop through points (vectorized is possible but this is explicit/clear)
+    for i in range(len(df)):
+        ri = r_idx[i]
+        ti = t_idx[i]
+        if ri < 0 or ri >= n_r or ti < 0 or ti >= n_t:
+            continue  # point outside the specified edges
+        theta_rad = np.deg2rad(hd[i])
+        sum_cos[ri, ti] += np.cos(theta_rad)
+        sum_sin[ri, ti] += np.sin(theta_rad)
+        counts[ri, ti] += 1
+
+    # compute circular mean angle and resultant length
+    mean_hd_deg = np.full((n_r, n_t), np.nan)
+    R_bar = np.full((n_r, n_t), np.nan)
+
+    nonzero = counts > 0
+    C = sum_cos[nonzero]
+    S = sum_sin[nonzero]
+    nvals = counts[nonzero]
+
+    # resultant length per bin (normalized)
+    R = np.hypot(C, S) / nvals
+    mean_angle_rad = np.arctan2(S, C)  # returns -pi..pi
+    mean_angle_deg = np.rad2deg(mean_angle_rad) % 360.0
+
+    mean_hd_deg[nonzero] = mean_angle_deg
+    R_bar[nonzero] = R
+
+    return mean_hd_deg, R_bar, counts
+
+
+def bin_egocentric_errors(
+    df,
+    dist_metric="euclidean",
+    dist_range=(0, 1.4),
+    dist_bins=8,
+    angle_bins=36,
+):
+    """
+    Bin egocentric error data into radial (distance) and angular bins.
+    """
+    distances = df.distance_to_goal[dist_metric].values
+    angles = df.angle_to_goal.allocentric.values
+
+    # Wrap angles to [0, 360)
+    angles = np.mod(angles, 360.0)
+
+    # Define bin edges
+    dist_edges = np.linspace(dist_range[0], dist_range[1], dist_bins + 1)
+    angle_edges = np.linspace(0.0, 360.0, angle_bins + 1)
+
+    # --- 2D binning ---
+    # counts[r, θ] = number of errors in that bin
+    counts, _, _ = np.histogram2d(distances, angles, bins=[dist_edges, angle_edges])
+
+    return counts, dist_edges, angle_edges
 
 
 # %% allocentric error map functions
@@ -231,6 +348,10 @@ def get_session_error_df(
     trials_df = session.trials_df.copy()
     navigation_df = session.navigation_df
     trajectory_decisions_df = session.trajectory_decisions_df
+    simple_maze = session.simple_maze()
+
+    #
+    label2pos = mr.get_maze_label2position(simple_maze)
 
     # loop over trials & collect info at error times
     trials_df.set_index("trial", inplace=True)
@@ -251,6 +372,7 @@ def get_session_error_df(
         # use navigation df to get higher-res info about loc, etc. at error times
         nav_df = navigation_df[(navigation_df.trial == trial) & (navigation_df.trial_phase == "navigation")].copy()
         error_df = nav_df.loc[np.array([nav_df.time.sub(et).abs().idxmin() for et in error_times])]
+        # compute bearing to goal at each error point
         _df = error_df[
             [
                 ("subject_ID", ""),
@@ -278,6 +400,10 @@ def get_session_error_df(
     error_df[("total_stim_days", "")] = session.total_stim_days
     error_df[("condition", "")] = session.condition
     return error_df
+
+
+def get_goal_bearing():
+    return
 
 
 # %%
