@@ -32,7 +32,7 @@ NAV_STRATEGIES = [
 # %% get exp level navigation_strategies_df
 
 
-def get_navigation_strategies_df(strategies=NAV_STRATEGIES, n_history=2, sessions=None, verbose=True, n_jobs=-1):
+def get_navigation_strategies_df(strategies=NAV_STRATEGIES, n_history=4, sessions=None, verbose=True, n_jobs=-1):
     """
     generate navigation strategies df from all expert stim days across subejcts
     """
@@ -92,10 +92,13 @@ def get_session_navigation_strategies_df(
     all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze))
     opp_actions = {"N": "S", "S": "N", "E": "W", "W": "E"}
     if "habit" in strategies:
-        habit_values_df = sh.get_habit_values_df(
-            session,
-            n_history=n_history,
-        )
+        if n_history > 0:
+            habit_values_df = sh.get_habit_values_df(
+                session,
+                n_history=n_history,
+            )
+        else:
+            habit_values_df = sh.get_habit_values_no_history(session)
 
     # define general value mapping function
     def _get_values(row, strategy):
@@ -137,9 +140,13 @@ def get_session_navigation_strategies_df(
         elif strategy == "forward_bias":
             return get_forward_bias_values(row[("previous_action", "")])
         elif strategy == "habit":
-            histories = [row[(f"history", i)] for i in range(1, n_history + 1)]
+            if n_history > 0:
+                histories = [row[(f"history", i)] for i in range(1, n_history + 1)]
+                histories = tuple(histories[::-1])
+            else:
+                histories = None
             return get_habit_values(
-                tuple(histories[::-1]),  # reverse to get correct order
+                histories,  # reverse to get correct order
                 row[("location", "")],
                 habit_values_df,
             )
@@ -379,7 +386,10 @@ def get_habit_values(histories, loc, habit_values_df):
     """ """
     values = {}
     for action in ["N", "S", "E", "W"]:
-        indx = (*histories, loc, action)
+        if histories is None:
+            indx = (loc, action)
+        else:
+            indx = (*histories, loc, action)
         if indx not in habit_values_df.index:
             values[action] = 0
         else:

@@ -8,6 +8,7 @@ import networkx as nx
 from collections import deque
 from joblib import Parallel, delayed
 
+from GridMaze.maze import representations as mr
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.processing import get_trajectory_decisions_dfs as td
 
@@ -20,6 +21,41 @@ with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
 # %% Functions
 
 
+def get_habit_values_no_history(
+    session,
+    subject_df=None,
+    stim_day_range=None,
+):
+    if subject_df is None:
+        subject_df = get_subject_decisions_df(
+            session.subject_ID,
+            n_history=1,
+            save=False,
+        )
+    # filter subject df
+    data_df = subject_df.copy()
+    if stim_day_range is not None:
+        data_df = subject_df[subject_df.total_stim_days.between(*stim_day_range)]
+    data_df = data_df[data_df.maze_name == session.maze_name]
+    # exclude current session
+    data_df = data_df[data_df.session_name != session.name]
+    simple_maze = session.simple_maze()
+    all_state_actions = mr.get_maze_place_direction_pairs(simple_maze, edges=False)
+    state_action_counts = data_df.groupby(["maze_position", "action"]).size()
+    missing_state_actions = list(set(all_state_actions) - set(state_action_counts.index.to_list()))
+    if len(missing_state_actions) > 0:
+        state_action_counts = pd.concat(
+            [state_action_counts, pd.Series(index=pd.MultiIndex.from_tuples(missing_state_actions), data=0)],
+        )
+    state_action_counts = state_action_counts.reset_index(name="count")
+    group_sum = state_action_counts.groupby(["maze_position"])["count"].transform("sum")
+    prob = state_action_counts["count"].div(group_sum).fillna(0)
+    habit_values_df = state_action_counts.copy().drop(columns=["count"])
+    habit_values_df["habit_value"] = prob
+    habit_values_df.set_index(["maze_position", "action"], inplace=True)
+    return habit_values_df
+
+
 def get_habit_values_df(
     session,
     subject_df=None,
@@ -27,6 +63,7 @@ def get_habit_values_df(
     n_history=2,
 ):
     """ """
+    assert n_history > 0
     if subject_df is None:
         subject_df = get_subject_decisions_df(
             session.subject_ID,

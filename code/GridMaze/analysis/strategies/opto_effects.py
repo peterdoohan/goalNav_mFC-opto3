@@ -10,6 +10,7 @@ import seaborn as sns
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.core import plotting as cp
 from GridMaze.analysis.strategies import models
+from GridMaze.analysis.strategies import get_input_data as gid
 
 # %% Global Variables
 from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
@@ -119,3 +120,104 @@ def _subsample_non_stim_trials(navigation_strategies_df, seed=0):
         .reset_index(drop=True)
     )
     return sampled_df.trial_unique_ID.tolist()
+
+
+# %%
+
+
+def plot_history_length_comparison(NLL_df, ax=None):
+    """ """
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(2, 3))
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_xlabel("habit history \n length")
+    ax.set_ylabel("neg loglikelihood \n (z-scored)")
+
+    # zscore within subject
+    NLL_df["NLL_z"] = NLL_df.groupby("subject_ID")["NLL"].transform(lambda x: (x - x.mean()) / x.std())
+    sns.lineplot(
+        data=NLL_df,
+        x="n_history",
+        y="NLL_z",
+        hue="condition",
+        palette=["dimgray", "#0077FF"],
+        errorbar="se",
+        ax=ax,
+    )
+    ax.legend(fontsize="small")
+    h = NLL_df.n_history.unique()
+    ax.set_xticks(h)
+    ax.set_xticklabels(h)
+    return
+
+
+def compare_habit_history_lengths(
+    strategies=["vector", "structure", "habit", "backtracking_penalty", "forward_bias"],
+    n_range=(0, 3),
+    sessions=None,
+    verbose=True,
+    save=False,
+):
+    """ """
+    save_path = RESULTS_PATH / "strategies" / "habit_history_length_comparison.htsv"
+    if not save and save_path.exists():
+        if verbose:
+            print(f"loading saved results from {save_path}")
+        NLL_df = pd.read_csv(save_path, sep="\t")
+        return NLL_df
+    if sessions is None:
+        if verbose:
+            print("Loading sessions...")
+        sessions = gs.get_maze_sessions(
+            subject_IDs="all",
+            stim_only=True,
+            with_data=["navigation_df", "trials_df", "session_info"],
+            must_have_data=True,
+        )
+    results = []
+    for n in range(n_range[0], n_range[1] + 1):
+        if verbose:
+            print(f"n_history = {n}")
+            print(f"generating input data...")
+        nav_strat_df = gid.get_navigation_strategies_df(
+            strategies=strategies,
+            n_history=n,
+            sessions=sessions,
+            verbose=False,
+            n_jobs=-1,
+        )
+        # filter for non-stim trials only (best fit normal data)
+        df = nav_strat_df[~nav_strat_df.stim_trial]
+        if verbose:
+            print(f"fitting models...")
+        for subject in SUBJECT_IDS:
+            if verbose:
+                print(f"  subject: {subject}")
+            subj_df = df[df.subject_ID == subject]
+            condition = subj_df.condition.unique()[0]
+            # fit strategy weights on select data
+            strategy_weights = models.get_navigation_strategy_weights(
+                subj_df,
+                strategies=strategies,
+            )
+            # get best neg loglikelihood
+            NLL = models.get_neg_loglikelihood(
+                list(strategy_weights.values()),
+                strategies,
+                subj_df,
+            )
+            results.append(
+                {
+                    "subject_ID": subject,
+                    "condition": condition,
+                    "n_history": n,
+                    "NLL": NLL,
+                }
+            )
+    NLL_df = pd.DataFrame(results)
+    if save:
+        if verbose:
+            print(f"saving results to {save_path}")
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        NLL_df.to_csv(save_path, sep="\t", index=False)
+    return NLL_df
