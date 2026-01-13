@@ -229,7 +229,7 @@ def get_random_effects_linreg_fits(delta_df, var="goal_fitness"):
 
 def run_3way_linear_mixed_model(
     excess_steps_df,
-    stim_day_range=(8, np.inf),
+    stim_day_range=(6, np.inf),
     outlier_thres=500,
     var="goal_fitness",
     zscore_var=True,
@@ -352,6 +352,74 @@ def add_trial_covariates(
 
 
 # %%
+
+
+def plot_excess_steps_heatmap_summary(
+    excess_steps_df,
+    maze_name="maze_2",
+    stim_day_range=(6, np.inf),
+    outlier_thres=500,
+    vmax=8,
+    plot_raw=False,
+    cmap="viridis",
+    axes=None,
+):
+    """ """
+    simple_maze = mr.get_simple_maze(maze_name)
+    edges = [l for l in mr.get_maze_locations(simple_maze) if "-" in l]
+    df = _filter_excess_steps_df(excess_steps_df, stim_day_range, outlier_thres)
+    df = df[df.maze_name == maze_name]
+    # get average heatmap for every subject and then average across groups (stim on & off)
+    group_stim_df = (
+        df.groupby(["subject_ID", "condition", "goal", "stim_trial"])
+        .n_excess_steps.mean()
+        .unstack(level=-1)
+        .groupby(level=[1, 2])
+        .mean()
+    )
+    if plot_raw:
+        # plot stim x group in separate heatmaps
+        f, axes = plt.subplots(2, 2, figsize=(6, 6))
+        for i, group in enumerate(["control", "opto"]):
+            for j, stim in enumerate([False, True]):
+                _df = group_stim_df.loc[group][stim]
+                # add edges for plotting
+                _df = pd.concat([_df, pd.Series(0, index=edges)])
+                cbar_label = "excess steps" if group == "opto" and stim else None
+                mp.plot_simple_heatmap(
+                    simple_maze,
+                    _df,
+                    colormap=cmap,
+                    value_label=cbar_label,
+                    node_size=175,
+                    edge_size=6.5,
+                    vmin=0,
+                    vmax=vmax,
+                    ax=axes[i, j],
+                    title=f"{group} - Stim {'On' if stim else 'Off'}",
+                )
+    else:
+        # plot delta excess steps within each group
+        f, axes = plt.subplots(1, 2, figsize=(6, 3))
+        delta_df = group_stim_df.diff(axis=1)[True]
+        for group, ax in zip(["control", "opto"], axes):
+            _df = delta_df.loc[group]
+            # add edges for plotting
+            _df = pd.concat([_df, pd.Series(0, index=edges)])
+            cbar_label = "Δ excess steps" if group == "opto" else None
+            mp.plot_simple_heatmap(
+                simple_maze,
+                _df,
+                colormap=cmap,
+                value_label=cbar_label,
+                node_size=175,
+                edge_size=6.5,
+                allow_negative=True,
+                vmin=None,
+                vmax=vmax,
+                ax=ax,
+                title=group,
+            )
 
 
 def plot_delta_delta_excess_steps_across_goals(
