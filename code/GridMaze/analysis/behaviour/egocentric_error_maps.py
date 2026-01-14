@@ -47,12 +47,13 @@ def test(
     if stim_only:
         # match time in trial data across stim ON/OFF
         df = df[df.time_in_trial <= MAX_STIM_DURATION]
-
+    return df
     # get egocentric error heatmap per subject & stim condition
     dfs = []
     for subject in SUBJECT_IDS:
         for stim_trial in [True, False]:
             sub_df = df[(df.subject_ID == subject) & (df.stim_trial == stim_trial)]
+            return sub_df
             condition = sub_df.condition.unique()[0]
             heatmap = get_egocentric_error_heatmap(sub_df, emax)
             long_hm = heatmap.stack().reset_index(name="error_rate")
@@ -146,11 +147,10 @@ def get_egocentric_error_heatmap(df, emax=3):
     """ """
     # filter for egocentric range
     ego_df = df[df.ego_goal_x.between(-emax, emax) & df.ego_goal_y.between(-emax, emax)]
-    ego_cols = ["ego_goal_x", "ego_goal_y"]
-    error_counts = ego_df.groupby(ego_cols).error.sum().unstack(0)  # x,y (ego)
-    state_visits = ego_df.groupby(ego_cols).size().unstack(0)  # x,y (ego)
-    error_rate = error_counts / state_visits
-    return error_rate
+    ego_grouped = ego_df.groupby(["ego_goal_x", "ego_goal_y"])
+    error_rate = ego_grouped.error.sum() / ego_grouped.error.size()
+    hm = error_rate.unstack(1)
+    return hm
 
 
 # %% error df functions
@@ -239,23 +239,33 @@ def get_session_error_df(session):
 
 
 def get_egocentric_goal_coords(loc, action, goal, label2coord):
-    """ """
-    loc_coord = label2coord[loc]
-    goal_coord = label2coord[goal]
+    """
+    Returns egocentric goal coordinates.
+    ego_goal_x: forward (positive ahead)
+    ego_goal_y: right (positive to the agent's right)
+
+    """
+    xl, yl = label2coord[loc]
+    xg, yg = label2coord[goal]
+
     if action == "N":
-        x = goal_coord[0] - loc_coord[0]
-        y = goal_coord[1] - loc_coord[1]
+        x = xg - xl
+        y = yl - yg
     elif action == "S":
-        x = loc_coord[0] - goal_coord[0]
-        y = loc_coord[1] - goal_coord[1]
+        x = xl - xg
+        y = yg - yl
+
     elif action == "E":
-        x = goal_coord[1] - loc_coord[1]
-        y = loc_coord[0] - goal_coord[0]
+        x = yg - yl
+        y = xg - xl
+
     elif action == "W":
-        x = loc_coord[1] - goal_coord[1]
-        y = goal_coord[0] - loc_coord[0]
+        x = yl - yg
+        y = xl - xg
+
     else:
         raise ValueError("invalid action")
+
     return pd.Series({"ego_goal_x": int(x), "ego_goal_y": int(y)})
 
 
