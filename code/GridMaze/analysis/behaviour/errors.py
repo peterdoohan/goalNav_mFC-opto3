@@ -6,6 +6,7 @@ Quant of errors during navigation
 import json
 import numpy as np
 import pandas as pd
+import networkx as nx
 from joblib import Parallel, delayed
 from matplotlib import pyplot as plt
 from scipy.ndimage import gaussian_filter
@@ -14,6 +15,8 @@ from matplotlib.patches import FancyArrowPatch, Circle
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.maze import plotting as mp
 from GridMaze.maze import representations as mr
+from GridMaze.analysis.strategies import habits as sh
+
 
 # %% Global Variables
 
