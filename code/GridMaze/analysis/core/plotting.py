@@ -16,7 +16,7 @@ from pingouin import mixed_anova
 # %% Functions
 
 
-def plot_group_by_stim(df, y, ax=None, stim_color="#0077FF", print_stats=False, allow_neg=False):
+def plot_group_by_stim(df, y, ax=None, stim_color="#0077FF", print_stats=False, allow_neg=False, legend=True):
     """ """
     # set up fig
     if ax is None:
@@ -54,20 +54,24 @@ def plot_group_by_stim(df, y, ax=None, stim_color="#0077FF", print_stats=False, 
         palette=[condition2color[c] for c in conditions],
         ax=ax,
     )
-    sns.move_legend(
-        ax,
-        "lower center",
-        ncol=2,
-        title="light on",
-        frameon=True,
-        fontsize="x-small",
-    )
+    if legend:
+        sns.move_legend(
+            ax,
+            "lower center",
+            ncol=2,
+            title="light on",
+            frameon=True,
+            fontsize="x-small",
+        )
+    else:
+        ax.get_legend().remove()
     ax.set_xlabel("group")
     ax.set_ylabel(y)
     if not allow_neg:
         ax.set_ylim(bottom=0)
     else:
         ax.set_ylim(df[y].min() * 1.1, df[y].max() * 1.1)
+
     if print_stats:
         stats_df = mixed_anova(
             dv=y,

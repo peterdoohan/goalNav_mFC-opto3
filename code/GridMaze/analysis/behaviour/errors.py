@@ -9,12 +9,10 @@ import pandas as pd
 import networkx as nx
 from joblib import Parallel, delayed
 from matplotlib import pyplot as plt
-from scipy.ndimage import gaussian_filter
-from matplotlib.patches import FancyArrowPatch, Circle
 
-from GridMaze.analysis.core import get_sessions as gs
-from GridMaze.maze import plotting as mp
 from GridMaze.maze import representations as mr
+from GridMaze.analysis.core import get_sessions as gs
+from GridMaze.analysis.core import plotting as cp
 from GridMaze.analysis.strategies import habits as sh
 
 
@@ -26,6 +24,34 @@ from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
 
 with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
     SUBJECT_IDS = json.load(infile)
+
+# %% Group x Stim quantification of errors
+
+
+def test(
+    error_df,
+    e="error",
+    stim_day_range=(4, gs.TOTAL_STIM_DAYS),
+    stim_only=True,
+):
+
+    df = error_df.copy()
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    if stim_only:
+        # match time in trial data across stim ON/OFF
+        df = df[df.time_in_trial <= MAX_STIM_DURATION]
+
+    # get group x stim
+    grouped_df = df.groupby(["condition", "subject_ID", "stim_trial"])
+    e_count = grouped_df[e].sum()
+    n_trials = grouped_df.trial_unique_ID.size()
+    e_rate = e_count / n_trials
+    _name = e + "_rate"
+    erate_df = e_rate.reset_index(name=_name)
+    cp.plot_group_by_stim(erate_df, y=_name, print_stats=True, legend=False)
+    return erate_df
+
 
 # %% eogcentric error map functions
 
@@ -51,7 +77,8 @@ def get_error_df(sessions=None, verbose=False, n_jobs=-1):
                 print(f"Processing session: {s.name}")
             df = get_session_error_df(s)
             dfs.append(df)
-    error_df = pd.concat(dfs, ignore_index=True)
+    error_df = pd.concat(dfs, axis=0)
+    error_df.reset_index(drop=True, inplace=True)
     return error_df
 
 
@@ -82,19 +109,25 @@ def get_session_error_df(session):
         ),
         axis=1,
     )
-
     # loop over trials and add errors
-    error_masks = []
-    time_in_trials = []
+
+    dfs = []
     for t in trials_df.index:
-        _df = error_df[error_df.trial == t]
+        _df = error_df[error_df.trial == t].copy()
         if _df.empty:
             continue
-        error_masks.append(get_error_mask(_df.steps_to_goal))
+        # mark errors
+        _df["error"] = get_error_mask(_df.steps_to_goal)
+        # mark repeat errors
+        repeat_errors = _df[_df.error].duplicated(subset=["maze_position", "action"])
+        _df["repeat_error"] = repeat_errors.reindex(_df.index, fill_value=False)
+        # get goal-pass errors
+        _df["goal_pass_error"] = (_df.maze_position == _df.goal) & (_df.index != _df.index[-1])
+        # get time in trial
         cue_time = trials_df.loc[t, ("time", "cue")]
-        time_in_trials.append(_df.time.sub(cue_time).values)
-    error_df["error"] = np.hstack(error_masks)
-    error_df["time_in_trial"] = np.hstack(time_in_trials)
+        _df["time_in_trial"] = _df.time.sub(cue_time).values
+        dfs.append(_df)
+    error_df = pd.concat(dfs, ignore_index=True)
 
     # add egocentric goal coords
     ego_goal_coords = error_df.apply(
