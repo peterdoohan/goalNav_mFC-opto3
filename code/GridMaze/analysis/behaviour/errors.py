@@ -28,19 +28,27 @@ with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
 # %% Group x Stim quantification of errors
 
 
-def test(
+def plot_group_by_stim_errors(
     error_df,
     e="error",
     stim_day_range=(4, gs.TOTAL_STIM_DAYS),
+    outlier_thres=None,
     stim_only=True,
+    ax=None,
 ):
-
-    df = error_df.copy()
-    if stim_day_range is not None:
-        df = df[df.total_stim_days.between(*stim_day_range)]
-    if stim_only:
-        # match time in trial data across stim ON/OFF
-        df = df[df.time_in_trial <= MAX_STIM_DURATION]
+    """
+    outlier thres testing:
+        "error": 30,
+        "repeat_error": 10,
+        "goal_pass_error": 10,
+    """
+    df = _filter_error_df(
+        error_df,
+        e=e,
+        stim_day_range=stim_day_range,
+        outlier_thres=outlier_thres,
+        stim_only=stim_only,
+    )
 
     # get group x stim
     grouped_df = df.groupby(["condition", "subject_ID", "stim_trial"])
@@ -49,8 +57,38 @@ def test(
     e_rate = e_count / n_trials
     _name = e + "_rate"
     erate_df = e_rate.reset_index(name=_name)
-    cp.plot_group_by_stim(erate_df, y=_name, print_stats=True, legend=False)
-    return erate_df
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(2, 3))
+    cp.plot_group_by_stim(
+        erate_df,
+        y=_name,
+        ax=ax,
+        print_stats=True,
+        legend=False,
+    )
+
+
+def _filter_error_df(
+    error_df,
+    e="error",
+    stim_day_range=(4, gs.TOTAL_STIM_DAYS),
+    outlier_thres=None,
+    stim_only=True,
+):
+    """ """
+    df = error_df.copy()
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    if stim_only:
+        # match time in trial data across stim ON/OFF
+        df = df[df.time_in_trial <= MAX_STIM_DURATION]
+    if outlier_thres is not None:
+        # if there are some massive outliers (eg, due to off task activty)
+        trial_counts = error_df.groupby(["trial_unique_ID"])[e].sum()
+        outlier_trials = trial_counts[trial_counts > outlier_thres].index
+        df = df[~df.trial_unique_ID.isin(outlier_trials)]
+
+    return df
 
 
 # %% eogcentric error map functions
