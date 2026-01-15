@@ -7,6 +7,8 @@ import json
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+from pingouin import mixed_anova
+
 
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.strategies import get_input_data as gid
@@ -23,7 +25,7 @@ MAX_STIM_DURATION = 30  # seconds
 # %% Functions
 
 
-def plot_habit_psychometrics_summary(psy_curve_df, stim_color="#0077FF", axes=None):
+def plot_habit_psychometrics_summary(psy_curve_df, stim_color="#0077FF", print_stats=True, axes=None):
     """ """
     if axes is None:
         f, axes = plt.subplots(1, 2, figsize=(4, 2.5), sharey=True, sharex=True)
@@ -53,15 +55,28 @@ def plot_habit_psychometrics_summary(psy_curve_df, stim_color="#0077FF", axes=No
             )
             ax.set_title(cond)
         ax.set_ylim(0, 1.1)
+
     axes[0].legend(fontsize="x-small")
+
+    if print_stats:
+        for hv in psy_curve_df.habit_value.unique():
+            stats_df = mixed_anova(
+                dv="p_correct",
+                within="stim_trial",
+                between="condition",
+                subject="subject_ID",
+                data=psy_curve_df[psy_curve_df.habit_value == hv],
+            )
+            p_int = stats_df.loc[stats_df["Source"] == "Interaction"].iloc[0]
+            print(f"Habit value {hv:.2f}: group x stim p={p_int['p-unc']:.3f}")
 
 
 def get_psychometrics_df(
     navigation_strategies_df,
-    stim_day_range=(4, gs.TOTAL_STIM_DAYS),
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     stim_only=True,
     x="habit",
-    x_bins=6,
+    x_bins=8,
 ):
     """ """
     # filter data
