@@ -22,6 +22,13 @@ with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
 # %%  Functions
 
 
+def plot_missed_paths_summary(results_df, plot_as="raw", axes=None):
+    """ """
+    assert plot_as in ["raw", "delta", "delta_delta"]
+
+    return
+
+
 def get_missed_paths_df(
     error_df,
     maze_name="maze_1",
@@ -44,7 +51,7 @@ def get_missed_paths_df(
     # load maze stuff
     simple_maze = mr.get_simple_maze(maze_name)
     extended_maze = mr.get_extended_simple_maze(simple_maze)
-    label2coord = mr.get_maze_label2coord(extended_maze)
+    label2coord = mr.get_maze_label2coord(simple_maze)
     coord2label = {v: k for k, v in label2coord.items()}
     all_shortest_paths = dict(nx.all_pairs_all_shortest_paths(extended_maze))
 
@@ -80,9 +87,11 @@ def get_missed_paths_heatmap(df, label2coord, coord2label, all_shortest_paths):
     # loop over decisions (df rows) and tally locations on shortest-path to goal
     for _, row in df.iterrows():
         loc = label2coord[row.maze_position]
-        goal = label2coord[row.goal_location]
+        goal = label2coord[row.goal]
         path = all_shortest_paths[loc][goal]
+        # randomly select one of the possible shortest paths
+        path = path[np.random.randint(len(path))]
         for n in path:
-            hm[coord2label[n]] += 1
+            hm.loc[coord2label[n]] += 1
 
     return hm
