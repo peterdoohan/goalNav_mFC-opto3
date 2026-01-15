@@ -32,7 +32,7 @@ NAV_STRATEGIES = [
 # %% get exp level navigation_strategies_df
 
 
-def get_navigation_strategies_df(strategies=NAV_STRATEGIES, n_history=4, sessions=None, verbose=True, n_jobs=-1):
+def get_navigation_strategies_df(strategies=NAV_STRATEGIES, n_history=1, sessions=None, verbose=True, n_jobs=-1):
     """
     generate navigation strategies df from all expert stim days across subejcts
     """
