@@ -88,3 +88,10 @@ def get_node_degree(simple_maze, with_edges=False):
     coord2label = mr.get_maze_coord2label(simple_maze)
 
     return {coord2label[coord]: nd for coord, nd in ND.items()}
+
+
+# %% habit-score
+
+
+def get_node_antihabit_scores():
+    return

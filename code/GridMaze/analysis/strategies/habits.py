@@ -83,6 +83,11 @@ def get_habit_values_df(
 
     # tally state-action counds including missing ones
     simple_maze = session.simple_maze()
+    habit_values_df = _get_habit_values(data_df, simple_maze, n_history)
+    return habit_values_df
+
+
+def _get_habit_values(data_df, simple_maze, n_history):
     node2available_actions = get_node2action_available(simple_maze, key_type="list")
     all_states = get_all_valid_histories(simple_maze, n=n_history + 1)
     all_state_actions = [(*state, a) for state in all_states for a in node2available_actions[state[-1]]]
@@ -298,3 +303,91 @@ def get_node2action_available(simple_maze, key_type="dict"):
         elif key_type == "list":
             node2NSEW_available[node_coord2label[node]] = actions
     return node2NSEW_available
+
+
+# %% define anithabit metric
+
+
+def get_goal_antihabit_scores(maze_name, subject_ID="all", stim_day_range=None):
+    """ """
+    all_pairs_antihabit = get_all_pairs_antihabit_scores(
+        maze_name,
+        subject_ID,
+        stim_day_range,
+    )
+    scores = {}
+    for goal in all_pairs_antihabit.keys():
+        scores[goal] = np.nanmean(list(all_pairs_antihabit[goal].values()))
+
+    return scores
+
+
+def get_all_pairs_antihabit_scores(maze_name, subject_ID="all", stim_day_range=None):
+    """
+    antihabit score = sum(habit values along shortest path) / (path length - 2)
+    np.nan if path is too short and history needed to get habit values is undefined
+    """
+    # load decisions data
+    if not subject_ID == "all":
+        df = get_subject_decisions_df(subject_ID)
+    else:
+        df = pd.concat(
+            [get_subject_decisions_df(s) for s in SUBJECT_IDS],
+            ignore_index=True,
+        )
+
+    # filter data
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    df = df[df.maze_name == maze_name]
+
+    # load maze
+    simple_maze = mr.get_simple_maze(maze_name)
+    coord2label = mr.get_maze_coord2label(simple_maze)
+    all_shortest_paths = dict(nx.all_pairs_shortest_path(simple_maze))
+
+    # get habit values from data
+    habit_values_df = _get_habit_values(df, simple_maze, n_history=1)
+
+    # calculate average antihabit score across shortest-paths between all pairs of nodes
+    antihabit_scores = {}
+    for start in all_shortest_paths.keys():
+        slabel = coord2label[start]
+        scores = {}
+        for goal in all_shortest_paths[start].keys():
+            glabel = coord2label[goal]
+            paths = all_shortest_paths[start][goal]
+            paths = [paths] if not isinstance(paths[0], list) else paths
+            for path in paths:
+                Hv = 0
+                path_legth = len(path)
+                if path_legth <= 2:
+                    scores[glabel] = np.nan
+                    continue
+                for i in range(1, path_legth - 1):
+                    prev_coord = path[i - 1]
+                    current_coord = path[i]
+                    next_coord = path[i + 1]
+                    action = get_action_from_positions(current_coord, next_coord)
+                    idx = (coord2label[prev_coord], coord2label[current_coord], action)
+                    Hv += habit_values_df.loc[idx, "habit_value"]
+                Hv = Hv / (path_legth - 2)  # average over path
+                scores[glabel] = Hv
+        antihabit_scores[slabel] = scores
+    return antihabit_scores
+
+
+def get_action_from_positions(current_coord, next_coord):
+    """ """
+    dx = next_coord[0] - current_coord[0]
+    dy = next_coord[1] - current_coord[1]
+    if dx == 0:
+        if dy == 1:
+            return "N"
+        elif dy == -1:
+            return "S"
+    else:
+        if dx == 1:
+            return "E"
+        elif dx == -1:
+            return "W"
