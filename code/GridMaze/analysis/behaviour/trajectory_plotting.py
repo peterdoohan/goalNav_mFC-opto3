@@ -15,7 +15,7 @@ from matplotlib.colors import Normalize
 from GridMaze.maze import representations as mr
 from GridMaze.maze import plotting as mp
 from GridMaze.analysis.processing.get_navigation_strategies_dfs import get_neighbor_cdir
-from GridMaze.analysis.behaviour import errors as be
+from GridMaze.analysis.errors import errors as be
 
 from matplotlib.patches import Wedge, FancyArrowPatch
 

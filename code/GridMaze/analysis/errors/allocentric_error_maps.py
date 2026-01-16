@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 from GridMaze.maze import representations as mr
 from GridMaze.maze import plotting as mp
 from GridMaze.analysis.core import get_sessions as gs
-from code.GridMaze.analysis.errors import errors as be
+from GridMaze.analysis.errors import errors as be
 
 # %% Global Variables
 from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
@@ -27,7 +27,7 @@ def plot_allocentric_error_map_summary(
     results_df,
     maze_name="maze_1",
     plot_as="raw",
-    colormap="viridis",
+    colormap="Reds",
     vmin=None,
     axes=None,
 ):
@@ -38,12 +38,18 @@ def plot_allocentric_error_map_summary(
 
     # load maze for plotting
     simple_maze = mr.get_simple_maze(maze_name)
+    plot_kwargs = {
+        "silhouette_edge_size": 6,
+        "silhouette_node_size": 150,
+        "star_base_length": 0.055,
+        "max_point_length": 0.065,
+    }
 
     if plot_as == "raw":
         # average hms across subjects in each group x stim condition
         if axes is None:
             f, axes = plt.subplots(2, 2, figsize=(6, 6))
-        plot_df = df.groupby(["condition", "stim_trial", "maze_position", "action"]).error_rate.mean()
+        plot_df = df.groupby(["condition", "stim_trial", "maze_position", "optimal_action"]).error_rate.mean()
         _max = plot_df.groupby(level=[0, 1, 2]).mean().max()
         for i, group in enumerate(["control", "opto"]):
             for j, stim_trial in enumerate([False, True]):
@@ -58,8 +64,7 @@ def plot_allocentric_error_map_summary(
                     value_label="error rate",
                     fixed_vmin=0,
                     fixed_vmax=_max,
-                    silhouette_edge_size=6,
-                    silhouette_node_size=150,
+                    **plot_kwargs,
                 )
 
     elif plot_as == "delta":
@@ -67,13 +72,13 @@ def plot_allocentric_error_map_summary(
         if axes is None:
             f, axes = plt.subplots(1, 2, figsize=(6, 3))
         pivot_df = df.pivot_table(
-            values="error_rate", index=["condition", "subject_ID", "maze_position", "action"], columns="stim_trial"
+            values="error_rate",
+            index=["condition", "subject_ID", "maze_position", "optimal_action"],
+            columns="stim_trial",
         )
         delta_df = pivot_df.diff(axis=1)[True].groupby(level=[0, 2, 3]).mean()
-        if vmin is None:
-            _min = delta_df.groupby(level=[0, 1]).mean().min()
         _max = delta_df.groupby(level=[0, 1]).mean().max()
-
+        _min = -_max if vmin is None else vmin
         for ax, group in zip(axes, ["control", "opto"]):
             ax.set_title(f"{group} (stim_on - stim_off)")
             hm = delta_df.loc[group]
@@ -85,9 +90,8 @@ def plot_allocentric_error_map_summary(
                 value_label="Δ error rate",
                 fixed_vmin=_min,
                 fixed_vmax=_max,
-                silhouette_edge_size=6,
-                silhouette_node_size=150,
                 allow_negative=True,
+                **plot_kwargs,
             )
 
     elif plot_as == "delta_delta":
@@ -96,33 +100,34 @@ def plot_allocentric_error_map_summary(
         if axes is None:
             f, axes = plt.subplots(1, 1, figsize=(3, 3))
         pivot_df = df.pivot_table(
-            values="error_rate", index=["condition", "subject_ID", "maze_position", "action"], columns="stim_trial"
+            values="error_rate",
+            index=["condition", "subject_ID", "maze_position", "optimal_action"],
+            columns="stim_trial",
         )
         delta_df = pivot_df.diff(axis=1)[True].groupby(level=[0, 2, 3]).mean()
         delta_delta = delta_df.loc["opto"] - delta_df.loc["control"]
-        if vmin is None:
-            _min = delta_delta.min()
         _max = delta_delta.groupby(level=0).mean().max()
+        _min = -_max if vmin is None else vmin
         mp.plot_directed_heatmap(
             simple_maze,
             delta_delta,
             ax=axes,
             colormap=colormap,
             value_label="ΔΔ error rate",
-            fixed_vmin=0,
+            fixed_vmin=_min,
             fixed_vmax=_max,
-            silhouette_edge_size=6,
-            silhouette_node_size=150,
             allow_negative=True,
+            **plot_kwargs,
         )
 
     return
 
 
-def get_error_maps_df(
+def get_allocentric_error_maps_df(
     error_df,
     e="error",
-    stim_day_range=(4, gs.TOTAL_STIM_DAYS),
+    ignore_goal_pass_errors=True,
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     outlier_thres=None,
     stim_only=True,
 ):
@@ -135,6 +140,8 @@ def get_error_maps_df(
         outlier_thres=outlier_thres,
         stim_only=stim_only,
     )
+    if ignore_goal_pass_errors:
+        df = df[~df.goal_pass_error]
 
     # get state-action error rate map per subject, stim, maze
     dfs = []
@@ -143,11 +150,10 @@ def get_error_maps_df(
         for subject in SUBJECT_IDS:
             for stim_trial in [True, False]:
                 sub_df = _df[(_df.subject_ID == subject) & (_df.stim_trial == stim_trial)]
-                condition = sub_df.condition.unique()[0]
                 # get error map
-                edf = sub_df.groupby(["maze_position", "action"])[e].mean().reset_index(name="error_rate")
+                edf = sub_df.groupby(["maze_position", "optimal_action"])[e].mean().reset_index(name="error_rate")
                 edf["subject_ID"] = subject
-                edf["condition"] = condition
+                edf["condition"] = sub_df.condition.unique()[0]
                 edf["maze_name"] = maze_name
                 edf["stim_trial"] = stim_trial
                 dfs.append(edf)
@@ -163,7 +169,7 @@ def plot_missed_paths_summary(
     results_df,
     maze_name="maze_1",
     plot_as="raw",
-    colormap="viridis",
+    colormap="Reds",
     vmin=None,
     axes=None,
 ):
@@ -182,6 +188,7 @@ def plot_missed_paths_summary(
             f, axes = plt.subplots(2, 2, figsize=(6, 6))
         plot_df = df.groupby(["condition", "stim_trial", "maze_position"]).missed_path_rate.mean()
         _max = plot_df.max()
+        _min = plot_df.min() if vmin is None else vmin
         for i, group in enumerate(["control", "opto"]):
             for j, stim_trial in enumerate([False, True]):
                 ax = axes[i, j]
@@ -194,7 +201,7 @@ def plot_missed_paths_summary(
                     ax=ax,
                     colormap=colormap,
                     value_label=clabel,
-                    vmin=0,
+                    vmin=_min,
                     vmax=_max,
                     edge_size=6,
                     node_size=150,
@@ -208,9 +215,8 @@ def plot_missed_paths_summary(
             values="missed_path_rate", index=["condition", "subject_ID", "maze_position"], columns="stim_trial"
         )
         delta_df = pivot_df.diff(axis=1)[True].groupby(level=[0, 2]).mean()
-        if vmin is None:
-            _min = delta_df.min()
         _max = delta_df.max()
+        _min = -_max if vmin is None else vmin
         for ax, group in zip(axes, ["control", "opto"]):
             ax.set_title(f"{group} (stim_on - stim_off)")
             clabel = "Δ missed path rate" if group == "opto" else None
@@ -238,16 +244,15 @@ def plot_missed_paths_summary(
         )
         delta_df = pivot_df.diff(axis=1)[True].groupby(level=[0, 2]).mean()
         delta_delta = delta_df.loc["opto"] - delta_df.loc["control"]
-        if vmin is None:
-            _min = delta_delta.min()
         _max = delta_delta.max()
+        _min = -_max if vmin is None else vmin
         mp.plot_simple_heatmap(
             simple_maze,
             delta_delta,
             ax=axes,
             colormap=colormap,
             value_label="ΔΔ missed path rate",
-            vmin=0,
+            vmin=_min,
             vmax=_max,
             edge_size=6,
             node_size=150,
@@ -260,6 +265,7 @@ def get_missed_paths_df(
     e="error",
     stim_day_range=(4, gs.TOTAL_STIM_DAYS),
     outlier_thres=None,
+    ignore_goal_pass_errors=True,
     stim_only=True,
 ):
     """ """
@@ -271,6 +277,8 @@ def get_missed_paths_df(
         outlier_thres=outlier_thres,
         stim_only=stim_only,
     )
+    if ignore_goal_pass_errors:
+        df = df[~df.goal_pass_error]
 
     dfs = []
     for maze_name in ["maze_1", "maze_2"]:

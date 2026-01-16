@@ -8,15 +8,14 @@ i.e. where was the goal relative to subject POV when they make navigational erro
 import json
 import numpy as np
 import pandas as pd
-import networkx as nx
-from joblib import delayed, Parallel
+
 import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib.patches import FancyArrow
 
 from GridMaze.maze import representations as mr
 from GridMaze.analysis.core import get_sessions as gs
-from code.GridMaze.analysis.errors import errors as be
+from GridMaze.analysis.errors import errors as be
 from GridMaze.analysis.strategies import habits as sh
 
 # %% Global Variables
