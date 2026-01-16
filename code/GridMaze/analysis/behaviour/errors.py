@@ -9,6 +9,7 @@ import pandas as pd
 import networkx as nx
 from joblib import Parallel, delayed
 from matplotlib import pyplot as plt
+from sklearn import neighbors
 
 from GridMaze.maze import representations as mr
 from GridMaze.analysis.core import get_sessions as gs
@@ -164,6 +165,17 @@ def get_session_error_df(session):
         # get time in trial
         cue_time = trials_df.loc[t, ("time", "cue")]
         _df["time_in_trial"] = _df.time.sub(cue_time).values
+        # get optimal actions
+        _df["optimal_action"] = _df.apply(
+            lambda row: get_optimal_action(
+                row["maze_position"],
+                row["goal"],
+                shortest_path_lengths,
+                simple_maze,
+                label2coord,
+            ),
+            axis=1,
+        )
         dfs.append(_df)
     error_df = pd.concat(dfs, ignore_index=True)
 
@@ -181,6 +193,22 @@ def get_session_error_df(session):
     error_df["subject_ID"] = session.subject_ID
     error_df["condition"] = session.condition
     return error_df
+
+
+def get_optimal_action(pos, goal, shortest_path_lengths, simple_maze, label2coord):
+    """ """
+    pos_coord = label2coord[pos]
+    goal_coord = label2coord[goal]
+    neighbors = np.array([tuple(n) for n in simple_maze.neighbors(pos_coord)])
+    path_lens = np.array([shortest_path_lengths[tuple(neighbor)][goal_coord] for neighbor in neighbors])
+    optimal_neighbors = neighbors[path_lens == path_lens.min()]
+    if len(optimal_neighbors) == 1:
+        optimal_neighbor = optimal_neighbors[0]
+    else:
+        # randomly choose one of the optimal neighbors
+        optimal_neighbor = optimal_neighbors[np.random.choice(len(optimal_neighbors))]
+    optimal_action = sh.get_action_from_positions(pos_coord, optimal_neighbor)
+    return optimal_action
 
 
 def get_egocentric_goal_coords(loc, action, goal, label2coord):

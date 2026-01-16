@@ -32,10 +32,23 @@ NAV_STRATEGIES = [
 # %% get exp level navigation_strategies_df
 
 
-def get_navigation_strategies_df(strategies=NAV_STRATEGIES, n_history=1, sessions=None, verbose=True, n_jobs=-1):
+def get_navigation_strategies_df(
+    strategies=NAV_STRATEGIES,
+    n_history=1,
+    sessions=None,
+    verbose=False,
+    n_jobs=-1,
+    save=False,
+):
     """
     generate navigation strategies df from all expert stim days across subejcts
     """
+    save_path = RESULTS_PATH / "strategies" / f"navigation_strategies_nhistory{n_history}.parquet"
+    if not save and save_path.exists():
+        if verbose:
+            print(f"Loading existing navigation strategies df from: {save_path}")
+        navigation_strategies_df = pd.read_parquet(save_path)
+        return navigation_strategies_df
     if sessions is None:
         if verbose:
             print("Loading all expert stim sessions...")
@@ -58,6 +71,11 @@ def get_navigation_strategies_df(strategies=NAV_STRATEGIES, n_history=1, session
             df = get_session_navigation_strategies_df(s, strategies, n_history)
             dfs.append(df)
     navigation_strategies_df = pd.concat(dfs, ignore_index=True)
+    if save:
+        if verbose:
+            print(f"Saving navigation strategies df to: {save_path}")
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        navigation_strategies_df.to_parquet(save_path)
     return navigation_strategies_df
 
 
