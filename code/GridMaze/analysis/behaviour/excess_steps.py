@@ -19,6 +19,7 @@ from GridMaze.maze import metrics as mm
 from GridMaze.maze import plotting as mp
 
 from GridMaze.analysis.behaviour import performance_metrics as pm
+from GridMaze.analysis.strategies import habits
 
 
 # %% Global Variables
@@ -85,7 +86,7 @@ def plot_delta_excess_steps_fit_slopes(
 
 def plot_stratified_delta_excess_steps(
     excess_steps_df,
-    stim_day_range=(8, np.inf),
+    stim_day_range=(6, np.inf),
     outlier_thres=500,
     var="goal_fitness",
     maze_cmap="rainbow",
@@ -187,7 +188,7 @@ def plot_special_maze_legend(axes=None, maze_cmap="rainbow", maze_color="silver"
 
 def get_stratified_delta_excess_steps_df(
     excess_steps_df,
-    stim_day_range=(8, np.inf),
+    stim_day_range=(6, np.inf),
     outlier_thres=500,
     var="goal_fitness",
 ):
@@ -354,7 +355,7 @@ def add_trial_covariates(
 # %%
 
 
-def plot_excess_steps_heatmap_summary2(
+def plot_excess_steps_by_goal_heatmap_summary(
     excess_steps_df,
     maze_name="maze_2",
     stim_day_range=(6, np.inf),
@@ -469,3 +470,6 @@ def _filter_excess_steps_df(
     if outlier_thres is not None:
         df = df[df.n_excess_steps <= outlier_thres]
     return df
+
+
+# %%

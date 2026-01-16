@@ -310,7 +310,7 @@ def get_node2action_available(simple_maze, key_type="dict"):
 
 def get_goal_antihabit_scores(maze_name, subject_ID="all", stim_day_range=None):
     """ """
-    all_pairs_antihabit = get_all_pairs_antihabit_scores(
+    all_pairs_antihabit = get_all_pairs_antihabit_score(
         maze_name,
         subject_ID,
         stim_day_range,
@@ -322,7 +322,7 @@ def get_goal_antihabit_scores(maze_name, subject_ID="all", stim_day_range=None):
     return scores
 
 
-def get_all_pairs_antihabit_scores(maze_name, subject_ID="all", stim_day_range=None):
+def get_all_pairs_antihabit_score(maze_name, subject_ID="all", stim_day_range=None):
     """
     antihabit score = sum(habit values along shortest path) / (path length - 2)
     np.nan if path is too short and history needed to get habit values is undefined
