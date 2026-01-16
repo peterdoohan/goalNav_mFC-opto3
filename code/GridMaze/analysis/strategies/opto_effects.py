@@ -152,7 +152,7 @@ def plot_history_length_comparison(NLL_df, ax=None):
 
 
 def compare_habit_history_lengths(
-    strategies=["vector", "structure", "habit", "backtracking_penalty", "forward_bias"],
+    strategies=["vector", "structure", "habit", "backtracking_penalty"],
     n_range=(0, 3),
     sessions=None,
     verbose=True,

@@ -12,6 +12,7 @@ from scipy.optimize import curve_fit
 
 
 from GridMaze.analysis.core import get_sessions as gs
+from GridMaze.analysis.core import plotting as cp
 from GridMaze.analysis.strategies import get_input_data as gid
 
 
@@ -24,6 +25,23 @@ with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
 MAX_STIM_DURATION = 30  # seconds
 
 # %% Functions
+
+
+def plot_sigmoid_fit_params(fit_df, p=["alpha", "beta", "gamma", "lambda"], stim_color="royalblue", axes=None):
+    """ """
+    if axes is None:
+        f, axes = plt.subplots(1, len(p), figsize=(1.5 * len(p), 3.5))
+    for ax, p in zip(axes, p):
+        _neg = True if p in ["alpha", "gamma"] else False
+        cp.plot_group_by_stim(
+            fit_df,
+            y=p,
+            ax=ax,
+            stim_color=stim_color,
+            print_stats=True,
+            allow_neg=_neg,
+            legend=False,
+        )
 
 
 def get_curve_fit_df(psy_curve_df):
@@ -51,7 +69,7 @@ def plot_habit_psychometrics_inset(
 ):
     # set up fig
     if ax is None:
-        f, ax = plt.subplots(1, 1, figsize=(0.75, 1.5))
+        f, ax = plt.subplots(1, 1, figsize=(1, 1))
     ax.spines[["top", "right"]].set_visible(False)
     ax.set_xlabel("")
     ax.set_ylabel("")
@@ -75,7 +93,7 @@ def plot_habit_psychometrics_inset(
             fmt="o",
             label="light on" if stim_trial else "light off",
             color=color,
-            markersize=4,
+            markersize=6,
             alpha=1,
         )
         ax.set_title(group)
@@ -144,7 +162,7 @@ def get_psychometrics_df(
     navigation_strategies_df,
     stim_day_range=(4, gs.TOTAL_STIM_DAYS),
     stim_only=True,
-    decision_points_only=False,
+    decision_points_only=True,
     x="habit",
     x_bins=8,
 ):
