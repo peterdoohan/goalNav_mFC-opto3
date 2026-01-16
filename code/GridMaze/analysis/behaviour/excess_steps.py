@@ -230,9 +230,9 @@ def get_random_effects_linreg_fits(delta_df, var="goal_fitness"):
 
 def run_3way_linear_mixed_model(
     excess_steps_df,
+    var="goal_fitness",
     stim_day_range=(6, np.inf),
     outlier_thres=500,
-    var="goal_fitness",
     zscore_var=True,
     print_stats_model_summaries=False,
 ):
@@ -291,6 +291,7 @@ def add_trial_covariates(
         "goal_mean_geodesic_distance",
         "goal_degree",
         "goal_fitness",
+        "goal_antihabit_score",
     ],
     zscore_vars=True,
 ):
@@ -308,6 +309,7 @@ def add_trial_covariates(
             "goal_mean_geodesic_distance",
             "goal_degree",
             "goal_fitness",
+            "goal_antihabit_score",
         ]:
             raise ValueError(f"Covariate {_c} not recognized.")
 
@@ -348,6 +350,17 @@ def add_trial_covariates(
         maze_2_dict = mm.get_fitness(maze_2)
         v = _df.apply(lambda row: _goal2var(row, maze_1_dict, maze_2_dict), axis=1)
         _df["goal_fitness"] = zscore(v) if zscore_vars else v
+
+    if "goal_antihabit_score" in c:
+        subject2maze2dict = {
+            m: {s: habits.get_goal_antihabit_scores(m, s) for s in SUBJECT_IDS} for m in ["maze_1", "maze_2"]
+        }
+
+        def _get_goal_antihabit_score(row):
+            return subject2maze2dict[row.maze_name][row.subject_ID][row.goal]
+
+        v = _df.apply(_get_goal_antihabit_score, axis=1)
+        _df["goal_antihabit_score"] = zscore(v) if zscore_vars else v
 
     return _df
 

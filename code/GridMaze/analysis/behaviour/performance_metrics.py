@@ -271,6 +271,7 @@ def get_session_performance_df(
                 "n_excess_steps": n_excess_steps,
                 "shortest_path_length": shortest_path_length,
                 "path_length": path_length,
+                "start_location": start,
                 "start_euclidean_dist": start_euclidean_dist,
                 "start_geodesic_dist": start_geodesic_dist,
             }
