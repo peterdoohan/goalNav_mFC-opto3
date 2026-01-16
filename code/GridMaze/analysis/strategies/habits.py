@@ -308,24 +308,31 @@ def get_node2action_available(simple_maze, key_type="dict"):
 # %% define anithabit metric
 
 
-def get_goal_antihabit_scores(maze_name, subject_ID="all", stim_day_range=None):
+def get_goal_habit_scores(maze_name, subject_ID="all", stim_day_range=None):
     """ """
-    all_pairs_antihabit = get_all_pairs_antihabit_score(
+    all_pairs_antihabit = get_all_pairs_habit_score(
         maze_name,
         subject_ID,
         stim_day_range,
     )
     scores = {}
     for goal in all_pairs_antihabit.keys():
-        scores[goal] = np.nanmean(list(all_pairs_antihabit[goal].values()))
+        _scores = []
+        for start in all_pairs_antihabit[goal].keys():
+            if start != goal:
+                _scores.append(all_pairs_antihabit[goal][start])
+        scores[goal] = np.nanmean(_scores)
 
     return scores
 
 
-def get_all_pairs_antihabit_score(maze_name, subject_ID="all", stim_day_range=None):
+def get_all_pairs_habit_score(maze_name, subject_ID="all", stim_day_range=None):
     """
-    antihabit score = sum(habit values along shortest path) / (path length - 2)
+    habit score = sum(habit values along shortest path) / (path length - 2)
     np.nan if path is too short and history needed to get habit values is undefined
+
+    note dict is directional
+    dict[goal][start] = habit score for path from start to goal
     """
     # load decisions data
     if not subject_ID == "all":
@@ -349,8 +356,8 @@ def get_all_pairs_antihabit_score(maze_name, subject_ID="all", stim_day_range=No
     # get habit values from data
     habit_values_df = _get_habit_values(df, simple_maze, n_history=1)
 
-    # calculate average antihabit score across shortest-paths between all pairs of nodes
-    antihabit_scores = {}
+    # calculate average habit score across shortest-paths between all pairs of nodes
+    habit_scores = {}
     for start in all_shortest_paths.keys():
         slabel = coord2label[start]
         scores = {}
@@ -358,6 +365,7 @@ def get_all_pairs_antihabit_score(maze_name, subject_ID="all", stim_day_range=No
             glabel = coord2label[goal]
             paths = all_shortest_paths[start][goal]
             paths = [paths] if not isinstance(paths[0], list) else paths
+            Hvs = []
             for path in paths:
                 Hv = 0
                 path_legth = len(path)
@@ -372,9 +380,13 @@ def get_all_pairs_antihabit_score(maze_name, subject_ID="all", stim_day_range=No
                     idx = (coord2label[prev_coord], coord2label[current_coord], action)
                     Hv += habit_values_df.loc[idx, "habit_value"]
                 Hv = Hv / (path_legth - 2)  # average over path
-                scores[glabel] = Hv
-        antihabit_scores[slabel] = scores
-    return antihabit_scores
+                Hvs.append(Hv)
+            if len(Hvs) == 0:
+                scores[glabel] = np.nan
+            else:
+                scores[glabel] = np.nanmean(Hvs)
+        habit_scores[slabel] = scores
+    return habit_scores
 
 
 def get_action_from_positions(current_coord, next_coord):

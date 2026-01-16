@@ -233,7 +233,9 @@ def get_session_performance_df(
             continue
         # calculate excess steps
         traj = dec_df.maze_position.values
+        node_list = [x for x in traj if not "-" in x]
         start = traj[0]
+        first_node = node_list[0] if len(node_list) > 0 else np.nan
         goal = dec_df.goal.unique()[0]
         shortest_path = nx.shortest_path(
             extended_maze, simple_label2coord[start], simple_label2coord[goal], weight=None
@@ -272,6 +274,7 @@ def get_session_performance_df(
                 "shortest_path_length": shortest_path_length,
                 "path_length": path_length,
                 "start_location": start,
+                "first_node": first_node,
                 "start_euclidean_dist": start_euclidean_dist,
                 "start_geodesic_dist": start_geodesic_dist,
             }

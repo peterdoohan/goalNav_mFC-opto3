@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import networkx as nx
+import seaborn as sns
 from matplotlib import pyplot as plt
 import statsmodels.formula.api as smf
 from scipy.stats import zscore, chi2, linregress, ttest_ind, ttest_1samp
@@ -28,12 +29,62 @@ from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
 with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
     SUBJECT_IDS = json.load(f)
 
+# %% Functions
+
+
+def plot_excess_steps_vs_covariate(
+    excess_steps_df,
+    v="path_habit_score",
+    stim_day_range=(6, np.inf),
+    outlier_thres=500,
+    x_bins=10,
+    stim_color="#0077FF",
+    vmax=None,
+    axes=None,
+):
+    # set up fig
+    if axes is None:
+        f, axes = plt.subplots(1, 2, figsize=(4, 2), sharex=True, sharey=True)
+    for ax in axes:
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.set_ylabel("excess steps")
+        ax.set_xlabel(v)
+
+    # filter data
+    df = _filter_excess_steps_df(excess_steps_df, stim_day_range, outlier_thres)
+    if v not in df.columns:
+        # add trial path antihabit score covariate
+        df = add_trial_covariates(df, c=[v], zscore_vars=False)
+    df.dropna(subset=[v], inplace=True)
+    # bin v score for plotting
+    vmax = df[v].max() if vmax is None else vmax
+    df["bin"] = pd.cut(
+        df[v],
+        bins=np.linspace(0, vmax, x_bins + 1),
+        include_lowest=True,
+    )
+    # average xs step per bin over subjects
+    _df = df.groupby(["condition", "subject_ID", "stim_trial", "bin"], observed=True).n_excess_steps.mean()
+    grouped_df = _df.groupby(level=[0, 2, 3], observed=True)  # group x stim averages
+    mean = grouped_df.mean()
+    sem = grouped_df.sem()
+    for ax, group in zip(axes, ["control", "opto"]):
+        for stim_trial, color in zip([False, True], ["dimgrey", stim_color]):
+            ax.set_title(group)
+            _mean = mean.loc[(group, stim_trial)]
+            x = np.array([x.mid for x in _mean.index]).astype(float)
+            _mean = _mean.values
+            _sem = sem.loc[(group, stim_trial)].values
+            ax.plot(x, _mean, color=color, label=f"stim: {stim_trial}")
+            ax.fill_between(x, _mean - _sem, _mean + _sem, color=color, alpha=0.25)
+
+
 # %% random effects goal difficulty tests
 
 
 def plot_delta_excess_steps_fit_slopes(
     excess_steps_df,
-    stim_day_range=(8, np.inf),
+    stim_day_range=(6, np.inf),
     outlier_thres=500,
     var="goal_fitness",
     print_stats=True,
@@ -204,7 +255,6 @@ def get_stratified_delta_excess_steps_df(
         .reset_index()
     )  # note: because we are stratifying by goal we no stim trials in some conditions (delta=np.nan)
     delta_df.rename(columns={True: "delta_excess_steps"}, inplace=True)
-    # add goal fitness for each maze-goal
     delta_df = add_trial_covariates(delta_df, c=[var], zscore_vars=False)
     delta_df = delta_df.dropna(subset=["delta_excess_steps"])  # drop goals with no stim trials
     return delta_df
@@ -246,6 +296,7 @@ def run_3way_linear_mixed_model(
 
     # add covariate
     df = add_trial_covariates(df, c=[var], zscore_vars=zscore_var)
+    df.dropna(subset=[var], inplace=True)
 
     # full model (with group x stim x var 3-way interaction)
     md_full = smf.mixedlm(
@@ -291,7 +342,7 @@ def add_trial_covariates(
         "goal_mean_geodesic_distance",
         "goal_degree",
         "goal_fitness",
-        "goal_antihabit_score",
+        # "goal_habit_score",
     ],
     zscore_vars=True,
 ):
@@ -309,7 +360,8 @@ def add_trial_covariates(
             "goal_mean_geodesic_distance",
             "goal_degree",
             "goal_fitness",
-            "goal_antihabit_score",
+            "goal_habit_score",
+            "path_habit_score",
         ]:
             raise ValueError(f"Covariate {_c} not recognized.")
 
@@ -351,16 +403,31 @@ def add_trial_covariates(
         v = _df.apply(lambda row: _goal2var(row, maze_1_dict, maze_2_dict), axis=1)
         _df["goal_fitness"] = zscore(v) if zscore_vars else v
 
-    if "goal_antihabit_score" in c:
+    if "goal_habit_score" in c:
         subject2maze2dict = {
-            m: {s: habits.get_goal_antihabit_scores(m, s) for s in SUBJECT_IDS} for m in ["maze_1", "maze_2"]
+            m: {s: habits.get_goal_habit_scores(m, s) for s in SUBJECT_IDS} for m in ["maze_1", "maze_2"]
         }
 
-        def _get_goal_antihabit_score(row):
+        def _get_goal_habit_score(row):
             return subject2maze2dict[row.maze_name][row.subject_ID][row.goal]
 
-        v = _df.apply(_get_goal_antihabit_score, axis=1)
-        _df["goal_antihabit_score"] = zscore(v) if zscore_vars else v
+        v = _df.apply(_get_goal_habit_score, axis=1)
+        _df["goal_habit_score"] = zscore(v) if zscore_vars else v
+
+    if "path_habit_score" in c:
+        subject2maze2dict = {
+            m: {s: habits.get_all_pairs_habit_score(m, s) for s in SUBJECT_IDS} for m in ["maze_1", "maze_2"]
+        }
+
+        def _get_path_habit_score(row):
+            start = row.first_node
+            if not isinstance(start, str):
+                return np.nan
+            goal = row.goal
+            return subject2maze2dict[row.maze_name][row.subject_ID][goal][start]
+
+        v = _df.apply(_get_path_habit_score, axis=1)
+        _df["path_habit_score"] = zscore(v, nan_policy="omit") if zscore_vars else v
 
     return _df
 
@@ -473,7 +540,7 @@ def plot_excess_steps_by_goal_heatmap_summary(
 
 def _filter_excess_steps_df(
     excess_steps_df,
-    stim_day_range=(8, np.inf),
+    stim_day_range=(6, np.inf),
     outlier_thres=500,
 ):
     """ """
