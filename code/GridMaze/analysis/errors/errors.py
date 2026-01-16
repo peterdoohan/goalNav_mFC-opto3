@@ -95,8 +95,14 @@ def _filter_error_df(
 # %% eogcentric error map functions
 
 
-def get_error_df(sessions=None, verbose=False, n_jobs=-1):
+def get_error_df(sessions=None, verbose=False, n_jobs=-1, save=False):
     """ """
+    save_path = RESULTS_PATH / "errors" / "error_df.parquet"
+    if not save and save_path.exists():
+        if verbose:
+            print(f"Loading existing error df from {save_path}")
+        error_df = pd.read_parquet(save_path)
+        return error_df
     if sessions is None:
         if verbose:
             print("Loading all expert stim sessions...")
@@ -118,6 +124,11 @@ def get_error_df(sessions=None, verbose=False, n_jobs=-1):
             dfs.append(df)
     error_df = pd.concat(dfs, axis=0)
     error_df.reset_index(drop=True, inplace=True)
+    if save:
+        if verbose:
+            print(f"Saving error df to {save_path}")
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        error_df.to_parquet(save_path)
     return error_df
 
 

@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 from GridMaze.maze import representations as mr
 from GridMaze.maze import plotting as mp
 from GridMaze.analysis.core import get_sessions as gs
-from GridMaze.analysis.behaviour import errors as be
+from code.GridMaze.analysis.errors import errors as be
 
 # %% Global Variables
 from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH

@@ -16,7 +16,7 @@ from matplotlib.patches import FancyArrow
 
 from GridMaze.maze import representations as mr
 from GridMaze.analysis.core import get_sessions as gs
-from GridMaze.analysis.behaviour import errors as be
+from code.GridMaze.analysis.errors import errors as be
 from GridMaze.analysis.strategies import habits as sh
 
 # %% Global Variables
