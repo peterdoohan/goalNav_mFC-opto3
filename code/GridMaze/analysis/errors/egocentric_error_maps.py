@@ -12,11 +12,9 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 from matplotlib.patches import FancyArrow
+from scipy.ndimage import gaussian_filter
 
-from GridMaze.maze import representations as mr
 from GridMaze.analysis.core import get_sessions as gs
-from GridMaze.analysis.errors import errors as be
-from GridMaze.analysis.strategies import habits as sh
 
 # %% Global Variables
 from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
@@ -29,94 +27,106 @@ MAX_STIM_DURATION = 30  # seconds
 # %%
 
 
-def test(
-    error_df,
-    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
-    stim_only=True,
-    emax=3,
-    vmin=0,
-    vmax=0.05,
-    plot_raw=False,
+def plot_egocentric_error_map_summary(
+    ego_df,
+    wmax=4,
+    plot_as="raw",
+    colormap="Reds",
+    vmin=None,
+    vmax=None,
+    axes=None,
 ):
     """ """
-    # filter data
-    df = error_df.copy()
-    if stim_day_range is not None:
-        df = df[df.total_stim_days.between(*stim_day_range)]
-    if stim_only:
-        # match time in trial data across stim ON/OFF
-        df = df[df.time_in_trial <= MAX_STIM_DURATION]
-    # get egocentric error heatmap per subject & stim condition
-    dfs = []
-    for subject in SUBJECT_IDS:
-        for stim_trial in [True, False]:
-            sub_df = df[(df.subject_ID == subject) & (df.stim_trial == stim_trial)]
-            return sub_df
-            condition = sub_df.condition.unique()[0]
-            heatmap = get_egocentric_error_heatmap(sub_df, emax)
-            long_hm = heatmap.stack().reset_index(name="error_rate")
-            long_hm["condition"] = condition
-            long_hm["stim_trial"] = stim_trial
-            dfs.append(long_hm)
-    hm_df = pd.concat(dfs, ignore_index=True)
-
-    if plot_raw:
-        # plot all group x stim error maps
-        f, axes = plt.subplots(2, 2, figsize=(6, 6))
+    df = ego_df.copy()
+    if wmax is not None:
+        # further restrict window for plotting after smoothing
+        df = df[df.ego_goal_x.between(-wmax, wmax) & df.ego_goal_y.between(-wmax, wmax)]
+    if plot_as == "raw":
+        # plot all group x stim average error maps
+        if axes is None:
+            f, axes = plt.subplots(2, 2, figsize=(6, 6))
+        plot_df = df.groupby(["condition", "stim_trial", "ego_goal_x", "ego_goal_y"]).error_rate.mean()
+        vmax = plot_df.max() if vmax is None else vmax
+        vmin = 0 if vmin is None else vmin
         for i, group in enumerate(["control", "opto"]):
-            for j, stim_trial in enumerate([True, False]):
-                # cbar = True if i == 1 and j == 1 else False
-                plot_df = hm_df[(hm_df.condition == group) & (hm_df.stim_trial == stim_trial)]
-                hm = plot_df.groupby(["ego_goal_x", "ego_goal_y"]).error_rate.mean().unstack(1)
+            for j, stim_trial in enumerate([False, True]):
+                ax = axes[i, j]
+                ax.set_title(f"{group}: stim={stim_trial}")
+                ego_hm = plot_df.loc[group, stim_trial].unstack(0)
                 plot_egocentric_error_heatmap(
-                    hm,
+                    ego_hm,
                     vmin=vmin,
                     vmax=vmax,
+                    colormap=colormap,
                     cbar=True,
-                    ax=axes[i, j],
+                    ax=ax,
                 )
-                axes[i, j].set_title(f"{group}: stim={stim_trial}")
-        f.tight_layout()
-    else:
-        # plot Δ error rate (stim - no stim) per group
-        f, axes = plt.subplots(1, 2, figsize=(6, 3))
+    elif plot_as == "delta":
+        # get delta stim within subject then average across groups
+        if axes is None:
+            f, axes = plt.subplots(1, 2, figsize=(6, 3))
+        pivot_df = df.pivot_table(
+            index=["subject_ID", "condition", "ego_goal_x", "ego_goal_y"],
+            columns="stim_trial",
+            values="error_rate",
+        )
+        plot_df = pivot_df.diff(axis=1)[True].groupby(level=[1, 2, 3]).mean()
+        vmax = plot_df.max() if vmax is None else vmax
+        vmin = -vmax if vmin is None else vmin
         for group, ax in zip(["control", "opto"], axes):
-            plot_df = hm_df[hm_df.condition == group]
-            # take difference between stim ON & OFF heatmaps in group
-            hm = (
-                plot_df.groupby(["ego_goal_x", "ego_goal_y", "stim_trial"])
-                .error_rate.mean()
-                .unstack(2)
-                .diff(axis=1)[True]
-                .unstack(0)
-            )
+            ax.set_title(group)
+            plot_ego_hm = plot_df.loc[group].unstack(0)
             plot_egocentric_error_heatmap(
-                hm,
+                plot_ego_hm,
                 vmin=vmin,
                 vmax=vmax,
+                colormap=colormap,
                 cbar=True,
                 cbar_label="Δ error rate",
                 ax=ax,
             )
-            ax.set_title(group)
-        f.tight_layout()
+    elif plot_as == "delta_delta":
+        if axes is None:
+            f, axes = plt.subplots(1, 1, figsize=(3, 3))
+        pivot_df = df.pivot_table(
+            index=["subject_ID", "condition", "ego_goal_x", "ego_goal_y"],
+            columns="stim_trial",
+            values="error_rate",
+        )
+        delta_df = pivot_df.diff(axis=1)[True].groupby(level=[1, 2, 3]).mean()
+        plot_df = delta_df.loc["opto"] - delta_df.loc["control"]
+        vmax = plot_df.max() if vmax is None else vmax
+        vmin = -vmax if vmin is None else vmin
+        plot_egocentric_error_heatmap(
+            plot_df.unstack(0),
+            vmin=vmin,
+            vmax=vmax,
+            colormap=colormap,
+            cbar=True,
+            cbar_label="ΔΔ error rate",
+            ax=axes,
+        )
+    else:
+        raise ValueError(f"plot_as {plot_as} not recognized")
 
 
 def plot_egocentric_error_heatmap(
     hm,
-    vmin=0,
+    colormap="Reds",
+    vmin=None,
     vmax=None,
     cbar=True,
     cbar_label="error rate",
+    arrow_color="forestgreen",
     ax=None,
 ):
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(3, 3))
     sns.heatmap(
-        hm.T,
+        hm,
         ax=ax,
         square=True,
-        cmap="viridis",
+        cmap=colormap,
         vmin=vmin,
         vmax=vmax,
         cbar=cbar,
@@ -133,19 +143,92 @@ def plot_egocentric_error_heatmap(
         0.1,  # point north
         head_width=0.05,
         head_length=0.05,
-        fc="white",
-        ec="white",
+        fc=arrow_color,
+        ec=arrow_color,
         transform=ax.transAxes,  # CRITICAL
         zorder=5,
     )
     ax.add_patch(arrow)
 
 
-def get_egocentric_error_heatmap(df, emax=3):
+# %% get egocentric error map df
+
+
+def get_egocentric_error_map_df(
+    error_df,
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    stim_only=True,
+    wmax=5,
+    smooth_sigma_levels=(0.0, 1, 2.5),
+):
+    """ """
+    # filter data
+    df = error_df.copy()
+    if stim_day_range is not None:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    if stim_only:
+        # match time in trial data across stim ON/OFF
+        df = df[df.time_in_trial <= MAX_STIM_DURATION]
+    # get egocentric error heatmap per subject & stim condition
+    dfs = []
+    for subject in SUBJECT_IDS:
+        for stim_trial in [True, False]:
+            sub_df = df[(df.subject_ID == subject) & (df.stim_trial == stim_trial)]
+            heatmap = get_egocentric_error_heatmap(sub_df, wmax)
+            if smooth_sigma_levels:
+                heatmap = radial_smooth_heatmap(
+                    heatmap,
+                    sigma_levels=smooth_sigma_levels,
+                )
+            long_hm = heatmap.stack().reset_index(name="error_rate")
+            long_hm["subject_ID"] = subject
+            long_hm["condition"] = sub_df.condition.unique()[0]
+            long_hm["stim_trial"] = stim_trial
+            dfs.append(long_hm)
+    hm_df = pd.concat(dfs, ignore_index=True)
+    return hm_df
+
+
+def get_egocentric_error_heatmap(df, wmax=5):
     """ """
     # filter for egocentric range
-    ego_df = df[df.ego_goal_x.between(-emax, emax) & df.ego_goal_y.between(-emax, emax)]
+    ego_df = df[df.ego_goal_x.between(-wmax, wmax) & df.ego_goal_y.between(-wmax, wmax)]
     ego_grouped = ego_df.groupby(["ego_goal_x", "ego_goal_y"])
     error_rate = ego_grouped.error.sum() / ego_grouped.error.size()
-    hm = error_rate.unstack(1)
+    hm = error_rate.unstack(0)
     return hm
+
+
+def radial_smooth_heatmap(df, sigma_levels=(0.0, 1.0, 2.0)):
+    arr = np.asarray(df.values, dtype=float)
+    H, W = arr.shape
+
+    # ensure sigma_levels is a numpy array (so array indexing works)
+    sigma_levels = np.asarray(sigma_levels, dtype=float)
+    if sigma_levels.ndim != 1 or sigma_levels.size < 2:
+        raise ValueError("sigma_levels must be a 1D sequence with at least two values")
+
+    cy, cx = (H - 1) / 2.0, (W - 1) / 2.0
+    yy, xx = np.indices((H, W))
+    r = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
+    r_norm = r / r.max() if r.max() > 0 else r
+
+    smin, smax = sigma_levels[0], sigma_levels[-1]
+    sigma_target = smin + (smax - smin) * r_norm
+    sigma_target = np.clip(sigma_target, smin, smax)
+
+    blurred = np.stack([gaussian_filter(arr, sigma=s) for s in sigma_levels], axis=0)  # (L, H, W)
+
+    inds = np.searchsorted(sigma_levels, sigma_target, side="right") - 1
+    inds = np.clip(inds, 0, len(sigma_levels) - 2)
+
+    # now sigma_levels[inds] works because sigma_levels is a numpy array
+    s0 = sigma_levels[inds]
+    s1 = sigma_levels[inds + 1]
+    alpha = (sigma_target - s0) / (s1 - s0 + 1e-12)
+
+    v0 = blurred[inds, yy, xx]
+    v1 = blurred[inds + 1, yy, xx]
+
+    smoothed = (1.0 - alpha) * v0 + alpha * v1
+    return pd.DataFrame(smoothed, index=df.index, columns=df.columns)
