@@ -35,6 +35,9 @@ def plot_group_by_stim_errors(
     stim_day_range=(4, gs.TOTAL_STIM_DAYS),
     outlier_thres=None,
     stim_only=True,
+    print_stats=True,
+    stim_color="#0077FF",
+    legend=True,
     ax=None,
 ):
     """
@@ -64,8 +67,9 @@ def plot_group_by_stim_errors(
         erate_df,
         y=_name,
         ax=ax,
-        print_stats=True,
-        legend=False,
+        print_stats=print_stats,
+        legend=legend,
+        stim_color=stim_color,
     )
 
 

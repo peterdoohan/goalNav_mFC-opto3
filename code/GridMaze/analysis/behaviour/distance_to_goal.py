@@ -31,8 +31,13 @@ with open(EXPERIMENT_INFO_PATH / "subject_IDs.json", "r") as f:
 # %% curve fitting
 
 
-def plot_curve_fit_random_effects_summary(curve_fit_results, print_stats=True, axes=None):
+def plot_curve_fit_random_effects_summary(curve_fit_results, print_stats=True, stim_color="royalblue", axes=None):
     """ """
+    if isinstance(stim_color, str):
+        colors = [stim_color] * 3
+    else:
+        assert len(stim_color) == 3, "stim_color must be a single color or a list of 3 colors"
+        colors = stim_color
     if axes is None:
         fig, axes = plt.subplots(1, 3, figsize=(7, 3.5))
     for (
@@ -41,7 +46,7 @@ def plot_curve_fit_random_effects_summary(curve_fit_results, print_stats=True, a
         ax,
     ) in zip(
         ["amplitude", "lambda", "offset"],
-        ["#EC2E0C", "#EC7914", "#BEC50C"],
+        colors,
         axes,
     ):
         cp.plot_group_by_stim(

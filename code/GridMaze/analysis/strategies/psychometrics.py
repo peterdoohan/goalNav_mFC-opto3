@@ -82,7 +82,7 @@ def plot_habit_psychometrics_inset(
     sem = grouped_df.sem()
 
     # plot
-    for stim_trial, color in zip([False, True], ["dimgrey", stim_color]):
+    for stim_trial, color in zip([False, True], ["grey", stim_color]):
         # plot error bars
         _mean = mean.loc[(group, stim_trial)]
         _sem = sem.loc[(group, stim_trial)]
@@ -122,7 +122,7 @@ def plot_habit_psychometrics_summary(
     mean = grouped_df.mean()
     sem = grouped_df.sem()
     for ax, cond in zip(axes, ["control", "opto"]):
-        for stim_trial, color in zip([False, True], ["dimgrey", stim_color]):
+        for stim_trial, color in zip([False, True], ["grey", stim_color]):
             # plot error bars
             _mean = mean.loc[(cond, stim_trial)]
             _sem = sem.loc[(cond, stim_trial)]
