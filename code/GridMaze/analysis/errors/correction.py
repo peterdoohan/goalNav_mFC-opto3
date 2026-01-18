@@ -94,7 +94,7 @@ def plot_prob_backtrack_after_error(
             ax.fill_between(x, y - yerr, y + yerr, color=color, alpha=0.25)
         if x_range is not None:
             ax.set_xlim(x_range)
-        ax.set_ylim(top=0.2)
+        # ax.set_ylim(top=0.2)
     axes[0].legend(fontsize="x-small", loc="upper left")
 
 
@@ -104,6 +104,8 @@ def get_error_centered_df(
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     outlier_thres=None,
     stim_only=True,
+    ignore_degree_one_nodes=False,
+    optimal_only=False,
     n_jobs=-1,
 ):
     df = err._filter_error_df(
@@ -118,7 +120,9 @@ def get_error_centered_df(
     trial_unique_IDs = df.trial_unique_ID.unique()
 
     def _process_trial(trial_df, t):
-        trial_df = df[df.trial_unique_ID == t]
+        trial_df = df[df.trial_unique_ID == t].copy()
+        # add optimal action (decreases steps to goal)
+        trial_df["optimal_action"] = trial_df.steps_to_goal.diff().shift(-1).lt(0)
         error_inds = trial_df.index[trial_df.error].tolist()
         if len(error_inds) == 0:
             return None
@@ -127,6 +131,12 @@ def get_error_centered_df(
             for e_off in err_offsets:
                 step_ind = err_ind + e_off
                 if step_ind in trial_df.index:
+                    if ignore_degree_one_nodes:
+                        if trial_df.loc[step_ind, "node_degree"] == 1:
+                            continue  # skip degree one nodes
+                    if optimal_only:
+                        if not trial_df.loc[step_ind, "optimal_action"]:
+                            continue  # skip non-optimal actions
                     _df.loc[err_ind, e_off] = int(trial_df.loc[step_ind, "backtracking_mask"])
                 else:
                     continue  # nan by defualt

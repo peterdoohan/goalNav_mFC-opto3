@@ -8,6 +8,9 @@ i.e. where was the goal relative to subject POV when they make navigational erro
 import json
 import numpy as np
 import pandas as pd
+from pingouin import mixed_anova
+from statsmodels.stats.multitest import multipletests
+
 
 import seaborn as sns
 from matplotlib import pyplot as plt
@@ -29,9 +32,9 @@ MAX_STIM_DURATION = 30  # seconds
 
 def plot_egocentric_error_map_summary(
     ego_df,
-    wmax=4,
-    plot_as="raw",
-    colormap="Reds",
+    wmax=5,
+    plot_as="delta_delta",
+    colormap="coolwarm",
     vmin=None,
     vmax=None,
     axes=None,
@@ -152,6 +155,38 @@ def plot_egocentric_error_heatmap(
 
 
 # %% get egocentric error map df
+
+
+def get_stats_df(ego_df):
+    """ """
+    x_min, x_max = ego_df.ego_goal_x.min(), ego_df.ego_goal_x.max()
+    y_min, y_max = ego_df.ego_goal_y.min(), ego_df.ego_goal_y.max()
+    stats = []
+    for x in range(int(x_min), int(x_max) + 1):
+        for y in range(int(y_min), int(y_max) + 1):
+            _df = ego_df[(ego_df.ego_goal_x == x) & (ego_df.ego_goal_y == y)]
+            stat_df = mixed_anova(
+                dv="error_rate",
+                within="stim_trial",
+                between="condition",
+                subject="subject_ID",
+                data=_df,
+            )
+            stat_row = stat_df[stat_df.Source == "Interaction"].iloc[0]
+            stats.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "F": stat_row["F"],
+                    "p": stat_row["p-unc"],
+                }
+            )
+    stats_df = pd.DataFrame(stats)
+    # multiple comparisons correction
+    reject, pvals_corrected, _, _ = multipletests(stats_df["p"], method="fdr_bh")
+    stats_df["p_corrected"] = pvals_corrected
+    stats_df["reject_null"] = reject
+    return stats_df
 
 
 def get_egocentric_error_map_df(

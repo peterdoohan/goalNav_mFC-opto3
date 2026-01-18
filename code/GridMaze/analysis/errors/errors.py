@@ -4,6 +4,7 @@ Quant of errors during navigation
 
 # %% Imports
 import json
+from altair import YError
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -26,14 +27,66 @@ from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
 with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
     SUBJECT_IDS = json.load(infile)
 
+# %% error rate as a function of distance to goal
+
+
+def plot_step_stratifed_error_rate(
+    error_df,
+    e="error",
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    outlier_thres=None,
+    stim_only=True,
+    stim_color="#0077FF",
+    max_steps=8,
+    axes=None,
+):
+    """ """
+    # set up fig
+    if axes is None:
+        f, axes = plt.subplots(1, 2, figsize=(5, 2.5), sharey=True)
+    for ax in axes:
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.set_xlabel("steps to goal")
+        ax.set_ylabel(f"{e} rate")
+
+    # filter data
+    df = _filter_error_df(
+        error_df,
+        e=e,
+        stim_day_range=stim_day_range,
+        outlier_thres=outlier_thres,
+        stim_only=stim_only,
+    )
+    # get step stratified error rate per subject
+    subj_av = df.groupby(["subject_ID", "condition", "stim_trial", "steps_to_goal"])[e].mean()
+    # average across subjects within condition
+    grouped_df = subj_av.groupby(level=[1, 2, 3])
+    mean = grouped_df.mean().unstack(level=2)
+    sem = grouped_df.sem().unstack(level=2)
+
+    # plot
+    for cond, ax in zip(["control", "opto"], axes):
+        for stim_trial, color in zip([False, True], ["grey", stim_color]):
+            _mean = mean.loc[cond, stim_trial]
+            x = _mean.index.values.astype(int)
+            y = _mean.values
+            Yerr = sem.loc[cond, stim_trial].values
+            ax.plot(x, y, color=color, label=f"stim={stim_trial}")
+            ax.fill_between(x, y - Yerr, y + Yerr, color=color, alpha=0.25)
+        if max_steps is not None:
+            ax.set_xlim(0, max_steps)
+    axes[0].legend(fontsize="x-small", loc="lower right")
+
+
 # %% Group x Stim quantification of errors
 
 
 def plot_group_by_stim_errors(
     error_df,
     e="error",
-    stim_day_range=(4, gs.TOTAL_STIM_DAYS),
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     outlier_thres=None,
+    steps_to_goal_range=None,
     stim_only=True,
     print_stats=True,
     stim_color="#0077FF",
@@ -53,6 +106,8 @@ def plot_group_by_stim_errors(
         outlier_thres=outlier_thres,
         stim_only=stim_only,
     )
+    if steps_to_goal_range is not None:
+        df = df[df.steps_to_goal.between(*steps_to_goal_range)]
 
     # get group x stim
     grouped_df = df.groupby(["condition", "subject_ID", "stim_trial"])
