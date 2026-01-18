@@ -191,6 +191,16 @@ def get_session_error_df(session):
             ),
             axis=1,
         )
+        # add backtracking action
+        _df["backtracking_mask"] = _df.maze_position == _df.maze_position.shift(2)
+        # add node degree
+        _df["node_degree"] = _df.maze_position.apply(
+            lambda pos: get_node_degree(
+                pos,
+                simple_maze,
+                label2coord,
+            )
+        )
         dfs.append(_df)
     error_df = pd.concat(dfs, ignore_index=True)
 
@@ -208,6 +218,12 @@ def get_session_error_df(session):
     error_df["subject_ID"] = session.subject_ID
     error_df["condition"] = session.condition
     return error_df
+
+
+def get_node_degree(pos, simple_maze, label2coord):
+    """ """
+    pos_coord = label2coord[pos]
+    return simple_maze.degree[pos_coord]
 
 
 def get_optimal_action(pos, goal, shortest_path_lengths, simple_maze, label2coord):
