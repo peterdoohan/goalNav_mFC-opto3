@@ -8,8 +8,10 @@ import json
 import numpy as np
 import pandas as pd
 import networkx as nx
+from scipy.stats import zscore
 from joblib import Parallel, delayed
 
+from GridMaze.maze import representations as mr
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.strategies import habits as sh
 
@@ -23,7 +25,15 @@ NSEW = ["N", "S", "E", "W"]  # TODO: should use this global varibale instead of 
 
 NAV_STRATEGIES = [
     "vector",
+    "vector_close",
+    "vector_far",
+    "vector_ORTH_structure",
+    "vector_X_habit",
     "structure",
+    "structure_close",
+    "structure_far",
+    "structure_ORTH_vector",
+    "structure_X_habit",
     "habit",
     "backtracking_penalty",
     "forward_bias",
@@ -84,14 +94,9 @@ def get_navigation_strategies_df(
 
 def get_session_navigation_strategies_df(
     session,
-    strategies=[
-        "vector",
-        "structure",
-        "backtracking_penalty",
-        "forward_bias",
-        "habit",
-    ],
-    n_history=2,
+    strategies=NAV_STRATEGIES,
+    n_history=1,
+    close_far_cutoff=4,
     remove_edge_backtracks=True,
     ignore_final_step=True,
 ):
@@ -142,10 +147,48 @@ def get_session_navigation_strategies_df(
                 label2coord=label2coord,
                 coord2pos=coord2pos,
             )
+        elif strategy == "vector_close":
+            return get_vector_values_close(
+                row[("location", "")],
+                row[("goal", "")],
+                row[("steps_to_goal", "")],
+                n=close_far_cutoff,
+                label2coord=label2coord,
+                coord2pos=coord2pos,
+            )
+        elif strategy == "vector_far":
+            return get_vector_values_far(
+                row[("location", "")],
+                row[("goal", "")],
+                row[("steps_to_goal", "")],
+                n=close_far_cutoff,
+                label2coord=label2coord,
+                coord2pos=coord2pos,
+            )
         elif strategy == "structure":
             return get_structure_values(
                 row[("location", "")],
                 row[("goal", "")],
+                label2coord=label2coord,
+                simple_maze=simple_maze,
+                all_shortest_path_lengths=all_shortest_path_lengths,
+            )
+        elif strategy == "structure_close":
+            return get_structure_values_close(
+                row[("location", "")],
+                row[("goal", "")],
+                row[("steps_to_goal", "")],
+                n=close_far_cutoff,
+                label2coord=label2coord,
+                simple_maze=simple_maze,
+                all_shortest_path_lengths=all_shortest_path_lengths,
+            )
+        elif strategy == "structure_far":
+            return get_structure_values_far(
+                row[("location", "")],
+                row[("goal", "")],
+                row[("steps_to_goal", "")],
+                n=close_far_cutoff,
                 label2coord=label2coord,
                 simple_maze=simple_maze,
                 all_shortest_path_lengths=all_shortest_path_lengths,
@@ -174,12 +217,63 @@ def get_session_navigation_strategies_df(
     value_dfs = []
     # get values subject_choice, optimal_choice and availability + requested strats for all choices
     for v in ["subject_choice", "optimal_action", "available"] + strategies:
+        if "_X_" in v or "_ORTH_" in v:
+            continue  # deal with interactions and orthogonalisation later
         df = pd.DataFrame(init_df.apply(_get_values, axis=1, strategy=v).to_list())
         df.columns = pd.MultiIndex.from_product([[v], df.columns])
         value_dfs.append(df)
 
-    # combine with init_df
-    return pd.concat([init_df] + value_dfs, axis=1)
+    # combine all into single df
+    strats_df = pd.concat([init_df] + value_dfs, axis=1)
+
+    # add with orthogonalised regressors
+    orth_dfs = []
+    for v in strategies:
+        if "_ORTH_" in v:
+            strat1, strat2 = v.split("_ORTH_")
+            df1 = (
+                pd.DataFrame(init_df.apply(_get_values, axis=1, strategy=strat1).to_list())
+                if strat1 not in strategies
+                else strats_df[strat1]
+            )
+            df2 = (
+                pd.DataFrame(init_df.apply(_get_values, axis=1, strategy=strat2).to_list())
+                if strat2 not in strategies
+                else strats_df[strat2]
+            )
+            # get df1 (strat 1) orthogonalised with respect to df2
+            X, Y = df1.to_numpy(), df2.to_numpy()
+            B, *_ = np.linalg.lstsq(Y, X, rcond=None)
+            X_resid = X - Y @ B
+            df_orth = pd.DataFrame(X_resid, columns=NSEW)
+            df_orth.columns = pd.MultiIndex.from_product([[v], df_orth.columns])
+            orth_dfs.append(df_orth)
+    if len(orth_dfs) > 0:
+        strats_df = pd.concat([strats_df] + orth_dfs, axis=1)
+
+    # deal with strategy interactions
+    def zscore_rows(X, eps=1e-12):
+        row_means = X.mean(axis=1, keepdims=True)
+        row_stds = X.std(axis=1, keepdims=True) + eps
+        return (X - row_means) / row_stds
+
+    inter_dfs = []
+    for v in strategies:
+        if "_X_" in v:
+            strat1, strat2 = v.split("_X_")
+            if strat1 not in strategies or strat2 not in strategies:
+                raise ValueError(f"Interaction strategies must be combinations of other input strategies: {v}")
+            df1 = strats_df[strat1]
+            df2 = strats_df[strat2]
+            X, Y = df1.to_numpy(), df2.to_numpy()
+            X_int = X * Y
+            df_int = pd.DataFrame(X_int, columns=NSEW)
+            df_int.columns = pd.MultiIndex.from_product([[v], df_int.columns])
+            inter_dfs.append(df_int)
+    if len(inter_dfs) > 0:
+        strats_df = pd.concat([strats_df] + inter_dfs, axis=1)
+
+    return strats_df
 
 
 def get_init_df(
@@ -200,6 +294,8 @@ def get_init_df(
     navigation_df = session.navigation_df.copy()
     session_info = session.session_info
     simple_maze = session.simple_maze()
+    all_shortest_path_lengths = dict(nx.all_pairs_shortest_path_length(simple_maze))
+    label2coord = mr.get_maze_label2coord(simple_maze)
     trials_df = session.trials_df.copy()
     trials_df.set_index("trial", inplace=True)
     # further process navigation_df
@@ -242,6 +338,8 @@ def get_init_df(
             histories = [h[:-1] for h in histories]
             if locs.empty:
                 continue
+        goal = trials_df.loc[t, ("goal", "")]
+        steps_to_goal = [all_shortest_path_lengths[label2coord[loc]][label2coord[goal]] for loc in locs]
         # build df
         _df = pd.DataFrame(index=locs.index)
         _df[("trial", "")] = t
@@ -254,6 +352,8 @@ def get_init_df(
         _df[("action", "")] = actions.values
         _df[("previous_action", "")] = prev_action.values
         _df[("nth_visit", "")] = locs.to_frame().groupby("simple").cumcount()
+        _df[("steps_to_goal", "")] = steps_to_goal
+        _df[("node_degree", "")] = [simple_maze.degree[label2coord[loc]] for loc in locs]
         for i in range(1, n_history + 1):
             _df[(f"history", i)] = histories[i - 1].values
         dfs.append(_df)
@@ -342,6 +442,32 @@ def get_vector_values(loc, goal, label2coord=None, coord2pos=None, simple_maze=N
     }
 
 
+def get_vector_values_close(loc, goal, steps_to_goal, n=4, label2coord=None, coord2pos=None, simple_maze=None):
+    if steps_to_goal <= n:
+        return get_vector_values(
+            loc,
+            goal,
+            label2coord=label2coord,
+            coord2pos=coord2pos,
+            simple_maze=simple_maze,
+        )
+    else:
+        return {"N": 0, "S": 0, "E": 0, "W": 0}
+
+
+def get_vector_values_far(loc, goal, steps_to_goal, n=4, label2coord=None, coord2pos=None, simple_maze=None):
+    if steps_to_goal > n:
+        return get_vector_values(
+            loc,
+            goal,
+            label2coord=label2coord,
+            coord2pos=coord2pos,
+            simple_maze=simple_maze,
+        )
+    else:
+        return {"N": 0, "S": 0, "E": 0, "W": 0}
+
+
 def get_structure_values(loc, goal, label2coord=None, simple_maze=None, all_shortest_path_lengths=None):
     """
     Returns a dictionary of structure navigation values for each available direction from the current location to the goal.
@@ -384,6 +510,36 @@ def get_structure_values(loc, goal, label2coord=None, simple_maze=None, all_shor
         values[invalid_cdir] = -1
     # hacky reordering
     return {d: values[d] for d in ["N", "S", "E", "W"]}
+
+
+def get_structure_values_close(
+    loc, goal, steps_to_goal, n=4, label2coord=None, simple_maze=None, all_shortest_path_lengths=None
+):
+    if steps_to_goal <= n:
+        return get_structure_values(
+            loc,
+            goal,
+            label2coord=label2coord,
+            simple_maze=simple_maze,
+            all_shortest_path_lengths=all_shortest_path_lengths,
+        )
+    else:
+        return {"N": 0, "S": 0, "E": 0, "W": 0}
+
+
+def get_structure_values_far(
+    loc, goal, steps_to_goal, n=4, label2coord=None, simple_maze=None, all_shortest_path_lengths=None
+):
+    if steps_to_goal > n:
+        return get_structure_values(
+            loc,
+            goal,
+            label2coord=label2coord,
+            simple_maze=simple_maze,
+            all_shortest_path_lengths=all_shortest_path_lengths,
+        )
+    else:
+        return {"N": 0, "S": 0, "E": 0, "W": 0}
 
 
 def get_backtracking_penalty_values(prev_action, opp_actions=None):
