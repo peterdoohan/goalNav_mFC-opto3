@@ -50,6 +50,38 @@ def get_navigation_strategies_df(
     n_jobs=-1,
     save=False,
 ):
+    """"""
+    exclusion_strings = ["_X_", "_ORTH_", "_close", "_far"]
+    starting_strats = [s for s in strategies if all([excl not in s for excl in exclusion_strings])]
+    df = _get_navigation_strategies_df(
+        strategies=starting_strats,
+        n_history=n_history,
+        sessions=sessions,
+        verbose=verbose,
+        n_jobs=n_jobs,
+        save=save,
+    )
+
+    # deal with close/far regressors
+    for s in strategies:
+        pass
+    return
+
+
+def _get_navigation_strategies_df(
+    strategies=[
+        "structure",
+        "vector",
+        "habit",
+        "backtracking_penalty",
+        "forward_bias",
+    ],
+    n_history=1,
+    sessions=None,
+    verbose=False,
+    n_jobs=-1,
+    save=False,
+):
     """
     generate navigation strategies df from all expert stim days across subejcts
     """

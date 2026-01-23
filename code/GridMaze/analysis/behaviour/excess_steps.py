@@ -278,6 +278,36 @@ def get_random_effects_linreg_fits(delta_df, var="goal_fitness"):
 # %% Linear mixed modelling
 
 
+def run_double_3_way_linear_mixed_model(
+    excess_steps_df,
+    var1="goal_fitness",
+    var2="betweness_centrality",
+    stim_day_range=(6, np.inf),
+    outlier_thres=500,
+    zscore_vars=True,
+    print_stats_model_summaries=False,
+):
+    """ """
+    # filter data
+    df = _filter_excess_steps_df(excess_steps_df, stim_day_range, outlier_thres)
+
+    # add covariate
+    df = add_trial_covariates(df, c=[var1, var2], zscore_vars=zscore_vars)
+    df.dropna(subset=[var1, var2], inplace=True)
+
+    # full model (with group x stim x var1 and group x stim x var2 3-way interactions)
+    md_full = smf.mixedlm(
+        formula=f"n_excess_steps ~ condition * stim_trial * {var1} + condition * stim_trial * {var2}",
+        data=df,
+        groups=df["subject_ID"],
+        re_formula=f"~stim_trial + {var1} + {var2} + stim_trial:{var1} + stim_trial:{var2}",
+    )
+
+    print(md_full.summary())
+
+    return
+
+
 def run_3way_linear_mixed_model(
     excess_steps_df,
     var="goal_fitness",

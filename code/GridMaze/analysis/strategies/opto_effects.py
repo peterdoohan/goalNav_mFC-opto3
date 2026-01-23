@@ -55,6 +55,8 @@ def get_group_by_stim_strategy_weights(
     max_trial_duration=None,
     stim_only=True,
     subsample_non_stim_trials=False,
+    decision_point_only=False,
+    vector_structure_different=False,
 ):
     """ """
     # filter data
@@ -74,6 +76,17 @@ def get_group_by_stim_strategy_weights(
         # control trial times in non-stim times when filtering for stim_on
         # times only in stim trials
         df = df[df.time_in_trial.le(MAX_STIM_DURATION)]
+    if decision_point_only:
+        df = df[df.node_degree.gt(2)]
+    if vector_structure_different:
+        vector_choice = df.vector.idxmax(axis=1)
+        struc_bool_df = df.structure.eq(1)
+        # map vector_choice column names to integer column positions
+        col_positions = struc_bool_df.columns.get_indexer(vector_choice)
+        # check the boolean at [row_idx, col_pos]
+        arr = struc_bool_df.to_numpy(dtype=bool)
+        mask = arr[np.arange(len(struc_bool_df)), col_positions]
+        df = df[mask]
 
     # fit nav strategy weights for stim_on and stim_off decisions per subject
     results = []
