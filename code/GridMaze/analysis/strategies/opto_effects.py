@@ -2,6 +2,7 @@
 
 # %% Imports
 import json
+from matplotlib import lines
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -67,23 +68,19 @@ def get_group_by_stim_strategy_weights(
         keep_trials = df.groupby("trial_unique_ID").time_in_trial.max().le(max_trial_duration).index
         df = df[df.trial_unique_ID.isin(keep_trials)]
     if subsample_non_stim_trials:
-        # more data in non-stim condition, optionally balance data in conditions
-        # to check for sampling bias effects
+        # to check for sampling bias effects (seems fine)
         stim_trials = df[df.stim_trial].trial_unique_ID.to_list()
         keep_non_stim_trials = _subsample_non_stim_trials(df)
         df = df[df.trial_unique_ID.isin(stim_trials + keep_non_stim_trials)]
     if stim_only:
-        # control trial times in non-stim times when filtering for stim_on
-        # times only in stim trials
         df = df[df.time_in_trial.le(MAX_STIM_DURATION)]
     if decision_point_only:
         df = df[df.node_degree.gt(2)]
+    # vector and structure strategies disagree
     if vector_structure_different:
         vector_choice = df.vector.idxmax(axis=1)
         struc_bool_df = df.structure.eq(1)
-        # map vector_choice column names to integer column positions
         col_positions = struc_bool_df.columns.get_indexer(vector_choice)
-        # check the boolean at [row_idx, col_pos]
         arr = struc_bool_df.to_numpy(dtype=bool)
         mask = arr[np.arange(len(struc_bool_df)), col_positions]
         df = df[mask]
@@ -135,7 +132,86 @@ def _subsample_non_stim_trials(navigation_strategies_df, seed=0):
     return sampled_df.trial_unique_ID.tolist()
 
 
-# %%
+# %% see if interaction terms acutally improve model fits relative to added params
+
+
+def plot_habit_interaction_comparison(NLL_df, ax=None):
+    """ """
+    if ax is None:
+        f, ax = plt.subplots(1, 1, figsize=(2, 3))
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_xlabel("habit interactions")
+    ax.set_ylabel("neg loglikelihood \n (z-scored)")
+
+    # zscore within subject
+    NLL_df["NLL_z"] = NLL_df.groupby("subject_ID")["NLL"].transform(lambda x: (x - x.mean()) / x.std())
+
+    # plot
+    sns.pointplot(
+        data=NLL_df,
+        x="habit_int",
+        order=["none", "structure", "vector"],
+        y="NLL_z",
+        hue="condition",
+        palette=["dimgray", "#0077FF"],
+        errorbar="se",
+        linestyle="none",
+        alpha=1,
+        dodge=0.3,
+        ax=ax,
+    )
+    ax.legend(fontsize="small")
+
+
+def get_habit_interaction_NLL_df():
+    df = gid.get_navigation_strategies_df(
+        strategies=[
+            "vector",
+            "structure",
+            "habit",
+            "structure_X_habit",
+            "vector_X_habit",
+            "backtracking_penalty",
+        ],
+    )
+    # remove stim trials
+    df = df[~df.stim_trial]
+
+    results = []
+    for subject in SUBJECT_IDS:
+        subj_df = df[df.subject_ID == subject]
+        condition = subj_df.condition.unique()[0]
+        # fit strategy weights on select data
+        for strategies, int_var in zip(
+            [
+                ["vector", "structure", "habit", "backtracking_penalty"],
+                ["vector", "structure", "habit", "structure_X_habit", "backtracking_penalty"],
+                ["vector", "structure", "habit", "vector_X_habit", "backtracking_penalty"],
+            ],
+            ["none", "structure", "vector"],
+        ):
+            strategy_weights = models.get_navigation_strategy_weights(
+                subj_df,
+                strategies=strategies,
+            )
+            # get best neg loglikelihood
+            NLL = models.get_neg_loglikelihood(
+                list(strategy_weights.values()),
+                strategies,
+                subj_df,
+            )
+            results.append(
+                {
+                    "subject_ID": subject,
+                    "condition": condition,
+                    "habit_int": int_var,
+                    "NLL": NLL,
+                }
+            )
+    return pd.DataFrame(results)
+
+
+# %% compare optimal history lengths
 
 
 def plot_history_length_comparison(NLL_df, ax=None):
