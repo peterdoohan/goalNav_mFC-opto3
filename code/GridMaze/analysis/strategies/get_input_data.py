@@ -8,11 +8,12 @@ import json
 import numpy as np
 import pandas as pd
 import networkx as nx
-from scipy.stats import zscore
+
+# from scipy.stats import zscore
 from joblib import Parallel, delayed
-from torch import Value
 
 from GridMaze.maze import representations as mr
+from GridMaze.analysis.behaviour import trajectory_plotting as tp
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.strategies import habits as sh
 
@@ -75,13 +76,15 @@ def get_navigation_strategies_df(
         if "_close" in s:
             base_strat = s.split("_close")[0]
             keep_mask = df.steps_to_goal.le(close_far_cutoff)
-            strat_df = df.xs(base_strat, axis=1, level=0, drop_level=False).copy()
-            strat_df.loc[keep_mask, :] = 0
+            strat_df = df.xs(base_strat, axis=1, level=0).copy()
+            strat_df.loc[~keep_mask, :] = 0
+            strat_df.columns = pd.MultiIndex.from_product([[s], strat_df.columns])
         elif "_far" in s:
             base_strat = s.split("_far")[0]
             keep_mask = df.steps_to_goal.gt(close_far_cutoff)
-            strat_df = df.xs(base_strat, axis=1, level=0, drop_level=False).copy()
-            strat_df.loc[keep_mask, :] = 0
+            strat_df = df.xs(base_strat, axis=1, level=0).copy()
+            strat_df.loc[~keep_mask, :] = 0
+            strat_df.columns = pd.MultiIndex.from_product([[s], strat_df.columns])
 
         # add orthogonalised regressors
         elif "_ORTH_" in s:
@@ -178,7 +181,13 @@ def _get_navigation_strategies_df(
 
 def get_session_navigation_strategies_df(
     session,
-    strategies=NAV_STRATEGIES,
+    strategies=[
+        "structure",
+        "vector",
+        "habit",
+        "backtracking_penalty",
+        "forward_bias",
+    ],
     n_history=1,
     remove_edge_backtracks=True,
     ignore_final_step=True,
@@ -279,6 +288,7 @@ def get_init_df(
     remove_edge_backtracks=True,
     ignore_final_step=True,
     n_history=2,
+    goal_sight_kwargs={"alpha_deg": 160, "smooth_SD": 4, "min_consecutive": 0.4},
 ):
     """
     initalise navigation_strategies_df with node transitions defined trial by trial
@@ -310,6 +320,7 @@ def get_init_df(
         trial_df = navigation_df[navigation_df.trial == t]
         if trial_df.empty:
             continue
+        sg_idx, sg_time = tp.get_first_goal_sight(trial_df, **goal_sight_kwargs)
         start_time = trial_df.iloc[0].time.values[0]
         # filter transitions between nodes
         transitions_df = trial_df[trial_df.maze_position.simple_change]
@@ -344,6 +355,7 @@ def get_init_df(
         _df[("trial_unique_ID", "")] = gs.get_session_name(session_info) + f"_trial{t}"
         _df[("time_in_trial", "")] = times.sub(start_time)
         _df[("goal", "")] = trials_df.loc[t, ("goal", "")]
+        _df[("goal_sight", "")] = [True if t >= sg_time else False for t in times]
         _df[("stim_trial", "")] = trials_df.loc[t, ("stim_trial", "")]
         _df[("stim_on", "")] = choice_time2stim_on(trials_df.reset_index(), times)
         _df[("location", "")] = locs.values

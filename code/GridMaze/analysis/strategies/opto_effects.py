@@ -58,6 +58,7 @@ def get_group_by_stim_strategy_weights(
     subsample_non_stim_trials=False,
     decision_point_only=False,
     vector_structure_different=False,
+    goal_sight_only=False,
 ):
     """ """
     # filter data
@@ -72,13 +73,17 @@ def get_group_by_stim_strategy_weights(
         stim_trials = df[df.stim_trial].trial_unique_ID.to_list()
         keep_non_stim_trials = _subsample_non_stim_trials(df)
         df = df[df.trial_unique_ID.isin(stim_trials + keep_non_stim_trials)]
+    if goal_sight_only:
+        df = df[df.goal_sight]
     if stim_only:
         df = df[df.time_in_trial.le(MAX_STIM_DURATION)]
     if decision_point_only:
         df = df[df.node_degree.gt(2)]
     # vector and structure strategies disagree
     if vector_structure_different:
-        vector_choice = df.vector.idxmax(axis=1)
+        vec = df.vector.copy()
+        # vec[df.available] = -1
+        vector_choice = vec.idxmax(axis=1)
         struc_bool_df = df.structure.eq(1)
         col_positions = struc_bool_df.columns.get_indexer(vector_choice)
         arr = struc_bool_df.to_numpy(dtype=bool)
@@ -91,9 +96,10 @@ def get_group_by_stim_strategy_weights(
         subj_df = df[df.subject_ID == subject]
         condition = subj_df.condition.unique()[0]
         for stim_trial in [True, False]:
-            _df = subj_df[subj_df.stim_trial == stim_trial]
-            if stim_trial and stim_only:
-                _df = _df[_df.stim_on]
+            if stim_only:
+                _df = subj_df[subj_df.stim_trial == stim_trial]
+            else:
+                _df = subj_df[subj_df.stim_on == stim_trial]
             # fit strategy weights on select data
             strategy_weights = models.get_navigation_strategy_weights(_df, strategies=strategies)
             results.append(
