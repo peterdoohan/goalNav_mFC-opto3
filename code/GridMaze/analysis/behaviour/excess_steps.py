@@ -138,12 +138,13 @@ def plot_delta_excess_steps_fit_slopes(
 def plot_stratified_delta_excess_steps(
     excess_steps_df,
     stim_day_range=(6, np.inf),
-    outlier_thres=500,
+    outlier_thres=200,
     var="goal_fitness",
     maze_cmap="rainbow",
     point_labels=True,
     point_label_thres=4,
     regplot_color="silver",
+    x_log=False,
     axes=None,
 ):
     """ """
@@ -208,8 +209,8 @@ def plot_stratified_delta_excess_steps(
             edgecolor="none",
             linewidth=0,
         )
-    # axes[0].set_ylim(bottom=-2.5)
-    # axes[1].set_ylim(bottom=-2.5)
+        if x_log:
+            ax.set_xscale("log")
 
 
 def plot_special_maze_legend(axes=None, maze_cmap="rainbow", maze_color="silver"):
@@ -240,7 +241,7 @@ def plot_special_maze_legend(axes=None, maze_cmap="rainbow", maze_color="silver"
 def get_stratified_delta_excess_steps_df(
     excess_steps_df,
     stim_day_range=(6, np.inf),
-    outlier_thres=500,
+    outlier_thres=200,
     var="goal_fitness",
 ):
     # filter data
@@ -281,11 +282,12 @@ def get_random_effects_linreg_fits(delta_df, var="goal_fitness"):
 def run_double_3_way_linear_mixed_model(
     excess_steps_df,
     var1="goal_fitness",
-    var2="betweness_centrality",
+    var2="goal_betweenness_centrality",
     stim_day_range=(6, np.inf),
-    outlier_thres=500,
+    outlier_thres=None,
     zscore_vars=True,
-    print_stats_model_summaries=False,
+    full_random_effects=True,
+    print_stats_model_summaries=True,
 ):
     """ """
     # filter data
@@ -294,18 +296,25 @@ def run_double_3_way_linear_mixed_model(
     # add covariate
     df = add_trial_covariates(df, c=[var1, var2], zscore_vars=zscore_vars)
     df.dropna(subset=[var1, var2], inplace=True)
-
+    if full_random_effects:
+        re_formula = f"~stim_trial + {var1} + {var2} + stim_trial:{var1} + stim_trial:{var2}"
+    else:
+        re_formula = f"~stim_trial"
     # full model (with group x stim x var1 and group x stim x var2 3-way interactions)
     md_full = smf.mixedlm(
         formula=f"n_excess_steps ~ condition * stim_trial * {var1} + condition * stim_trial * {var2}",
         data=df,
         groups=df["subject_ID"],
-        re_formula=f"~stim_trial + {var1} + {var2} + stim_trial:{var1} + stim_trial:{var2}",
+        re_formula=re_formula,
     )
+    print("Fitting full model...")
+    res_full = md_full.fit(
+        reml=False, method="lbfgs", maxiter=10000
+    )  # fit with maximum likelihood for model comparison
 
-    print(md_full.summary())
-
-    return
+    if print_stats_model_summaries:
+        print("Full model results:")
+        print(res_full.summary())
 
 
 def run_3way_linear_mixed_model(

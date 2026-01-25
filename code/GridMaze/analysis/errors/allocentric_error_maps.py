@@ -182,57 +182,62 @@ def plot_missed_paths_summary(
 
     # load maze for plotting
     simple_maze = mr.get_simple_maze(maze_name)
+    plot_kwargs = {
+        "silhouette_edge_size": 6,
+        "silhouette_node_size": 150,
+        "star_base_length": 0.05,
+        "max_point_length": 0.03,
+    }
 
     if plot_as == "raw":
         # average hms across subjects in each group x stim condition
         if axes is None:
             f, axes = plt.subplots(2, 2, figsize=(6, 6))
-        plot_df = df.groupby(["condition", "stim_trial", "maze_position"]).missed_path_rate.mean()
-        _max = plot_df.max()
-        _min = plot_df.min() if vmin is None else vmin
+        plot_df = df.groupby(["condition", "stim_trial", "maze_position", "direction"]).missed_path_rate.mean()
+        _max = plot_df.groupby(level=[0, 1, 2]).mean().max()
+        _min = 0 if vmin is None else vmin
         for i, group in enumerate(["control", "opto"]):
             for j, stim_trial in enumerate([False, True]):
                 ax = axes[i, j]
                 ax.set_title(f"{group} - stim:{stim_trial}")
                 hm = plot_df.loc[(group, stim_trial)]
-                clabel = "missed path rate" if i == 1 and j == 1 else None
-                mp.plot_simple_heatmap(
+                mp.plot_directed_heatmap(
                     simple_maze,
                     hm,
                     ax=ax,
                     colormap=colormap,
-                    value_label=clabel,
-                    vmin=_min,
-                    vmax=_max,
-                    edge_size=6,
-                    node_size=150,
+                    value_label="miss rate",
+                    fixed_vmin=_min,
+                    fixed_vmax=_max,
+                    **plot_kwargs,
                 )
 
     elif plot_as == "delta":
         # take delta stim_on - stim_off within subject, then average across groups
         if axes is None:
             f, axes = plt.subplots(1, 2, figsize=(6, 3))
+
         pivot_df = df.pivot_table(
-            values="missed_path_rate", index=["condition", "subject_ID", "maze_position"], columns="stim_trial"
+            values="missed_path_rate",
+            index=["condition", "subject_ID", "maze_position", "direction"],
+            columns="stim_trial",
         )
-        delta_df = pivot_df.diff(axis=1)[True].groupby(level=[0, 2]).mean()
-        _max = delta_df.max()
+        delta_df = pivot_df.diff(axis=1)[True].groupby(level=[0, 2, 3]).mean()
+        _max = delta_df.groupby(level=[0, 1]).mean().max()
         _min = -_max if vmin is None else vmin
         for ax, group in zip(axes, ["control", "opto"]):
             ax.set_title(f"{group} (stim_on - stim_off)")
-            clabel = "Δ missed path rate" if group == "opto" else None
             hm = delta_df.loc[group]
-            mp.plot_simple_heatmap(
+            mp.plot_directed_heatmap(
                 simple_maze,
                 hm,
                 ax=ax,
                 colormap=colormap,
-                value_label=clabel,
-                vmin=_min,
-                vmax=_max,
-                edge_size=6,
-                node_size=150,
+                value_label="Δ miss rate",
+                fixed_vmin=_min,
+                fixed_vmax=_max,
                 allow_negative=True,
+                **plot_kwargs,
             )
 
     elif plot_as == "delta_delta":
@@ -241,30 +246,31 @@ def plot_missed_paths_summary(
         if axes is None:
             f, axes = plt.subplots(1, 1, figsize=(3, 3))
         pivot_df = df.pivot_table(
-            values="missed_path_rate", index=["condition", "subject_ID", "maze_position"], columns="stim_trial"
+            values="missed_path_rate",
+            index=["condition", "subject_ID", "maze_position", "direction"],
+            columns="stim_trial",
         )
-        delta_df = pivot_df.diff(axis=1)[True].groupby(level=[0, 2]).mean()
+        delta_df = pivot_df.diff(axis=1)[True].groupby(level=[0, 2, 3]).mean()
         delta_delta = delta_df.loc["opto"] - delta_df.loc["control"]
-        _max = delta_delta.max()
+        _max = delta_delta.groupby(level=0).mean().max()
         _min = -_max if vmin is None else vmin
-        mp.plot_simple_heatmap(
+        mp.plot_directed_heatmap(
             simple_maze,
             delta_delta,
             ax=axes,
             colormap=colormap,
-            value_label="ΔΔ missed path rate",
-            vmin=_min,
-            vmax=_max,
-            edge_size=6,
-            node_size=150,
+            value_label="ΔΔ miss rate",
+            fixed_vmin=_min,
+            fixed_vmax=_max,
             allow_negative=True,
+            **plot_kwargs,
         )
 
 
 def get_missed_paths_df(
     error_df,
     e="error",
-    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    stim_day_range=(4, gs.TOTAL_STIM_DAYS),
     outlier_thres=None,
     ignore_goal_pass_errors=True,
     stim_only=True,
@@ -320,7 +326,8 @@ def get_missed_paths_df(
                             "condition": condition,
                             "maze_name": maze_name,
                             "stim_trial": stim_trial,
-                            "maze_position": mp_norm.index,
+                            "maze_position": mp_norm.index.get_level_values(0),
+                            "direction": mp_norm.index.get_level_values(1),
                             "missed_path_rate": mp_norm.values,
                         }
                     )
