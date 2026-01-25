@@ -13,6 +13,7 @@ from GridMaze.maze import representations as mr
 from GridMaze.maze import plotting as mp
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.errors import errors as be
+from GridMaze.analysis.processing.get_navigation_dfs import get_cardinal_movement_direction
 
 # %% Global Variables
 from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
@@ -263,7 +264,7 @@ def plot_missed_paths_summary(
 def get_missed_paths_df(
     error_df,
     e="error",
-    stim_day_range=(4, gs.TOTAL_STIM_DAYS),
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     outlier_thres=None,
     ignore_goal_pass_errors=True,
     stim_only=True,
@@ -286,6 +287,7 @@ def get_missed_paths_df(
         # load maze stuff
         simple_maze = mr.get_simple_maze(maze_name)
         extended_maze = mr.get_extended_simple_maze(simple_maze)
+        all_state_actions = mr.get_maze_place_direction_pairs(simple_maze)
         label2coord = mr.get_maze_label2coord(simple_maze)
         coord2label = {v: k for k, v in label2coord.items()}
         all_shortest_paths = dict(nx.all_pairs_all_shortest_paths(extended_maze))
@@ -296,8 +298,20 @@ def get_missed_paths_df(
             for stim_trial in [True, False]:
                 sub_df = _df[(_df.subject_ID == subject) & (_df.stim_trial == stim_trial)]
                 condition = sub_df.condition.unique()[0]
-                mp_all = get_missed_paths_heatmap(sub_df, label2coord, coord2label, all_shortest_paths)
-                mp_err = get_missed_paths_heatmap(sub_df[sub_df[e]], label2coord, coord2label, all_shortest_paths)
+                mp_all = get_missed_paths_heatmap(
+                    sub_df,
+                    all_state_actions,
+                    label2coord,
+                    coord2label,
+                    all_shortest_paths,
+                )
+                mp_err = get_missed_paths_heatmap(
+                    sub_df[sub_df[e]],
+                    all_state_actions,
+                    label2coord,
+                    coord2label,
+                    all_shortest_paths,
+                )
                 mp_norm = mp_err / mp_all.replace(0, np.nan)
                 dfs.append(
                     pd.DataFrame(
@@ -315,10 +329,10 @@ def get_missed_paths_df(
     return results_df
 
 
-def get_missed_paths_heatmap(df, label2coord, coord2label, all_shortest_paths):
+def get_missed_paths_heatmap(df, all_state_actions, label2coord, coord2label, all_shortest_paths):
     """ """
     # initialise heatmap
-    hm = pd.Series(0, index=label2coord.keys())
+    hm = pd.Series(0, index=pd.MultiIndex.from_tuples(all_state_actions))
 
     # loop over decisions (df rows) and tally locations on shortest-path to goal
     for _, row in df.iterrows():
@@ -327,7 +341,36 @@ def get_missed_paths_heatmap(df, label2coord, coord2label, all_shortest_paths):
         path = all_shortest_paths[loc][goal]
         # randomly select one of the possible shortest paths
         path = path[np.random.randint(len(path))]
-        for n in path:
-            hm.loc[coord2label[n]] += 1
+        states = [coord2label[n] for n in path[:-1]]
+        actions = [_get_action(nxt, loc) for loc, nxt in zip(path[:-1], path[1:])]
+        state_actions = list(zip(states, actions))
+        for sa in state_actions:
+            hm.loc[sa] += 1
 
     return hm
+
+
+def _get_action(pos, prev_pos):
+    """
+    Taken from GridMaze.analysis.processing.get_navigation_dfs
+    get_cardinal_movement_direction
+    """
+    position_type = "node" if isinstance(pos[0], int) == True else "edge"
+    last_position_type = "node" if isinstance(prev_pos[0], int) == True else "edge"
+    if position_type == last_position_type:
+        raise ValueError("position and last_position must be different types")
+    if position_type == "node" and last_position_type == "edge":
+        dx = (pos[0] - prev_pos[0][0]) + (pos[0] - prev_pos[1][0])
+        dy = (pos[1] - prev_pos[0][1]) + (pos[1] - prev_pos[1][1])
+    elif position_type == "edge" and last_position_type == "node":
+        dx = (pos[0][0] - prev_pos[0]) + (pos[1][0] - prev_pos[0])
+        dy = (pos[0][1] - prev_pos[1]) + (pos[1][1] - prev_pos[1])
+    if dx > 0:
+        cardinal_direction = "E"
+    elif dx < 0:
+        cardinal_direction = "W"
+    elif dy > 0:
+        cardinal_direction = "N"
+    elif dy < 0:
+        cardinal_direction = "S"
+    return cardinal_direction
