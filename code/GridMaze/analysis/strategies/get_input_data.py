@@ -89,9 +89,19 @@ def get_navigation_strategies_df(
         # add orthogonalised regressors
         elif "_ORTH_" in s:
             strat1, strat2 = s.split("_ORTH_")
-            df1, df2 = df[strat1].copy(), df[strat2].copy()
-            # get df1 (strat 1) orthogonalised with respect to df2
-            X, Y = df1.values, df2.values
+            if strat2 != "all":
+                df1, df2 = df[strat1].copy(), df[strat2].copy()
+                # get df1 (strat 1) orthogonalised with respect to df2
+                X, Y = df1.values, df2.values
+            else:
+                df1 = df[strat1].copy()
+                remaining_strats = [
+                    st for st in strategies if st != strat1 and all(excl not in st for excl in exclusion_strings)
+                ]
+                df2 = pd.concat([df[st] for st in remaining_strats], axis=1)
+                # get df1 (strat 1) orthogonalised with respect to all other strats
+                X, Y = df1.values, df2.values
+            # linear algebra to get residuals of X with respect to Y
             B, *_ = np.linalg.lstsq(Y, X, rcond=None)
             X_resid = X - Y @ B
             strat_df = pd.DataFrame(X_resid, columns=NSEW)

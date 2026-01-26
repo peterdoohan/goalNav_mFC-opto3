@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from torch import permute
 
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.core import plotting as cp
@@ -22,7 +23,51 @@ with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
 MAX_STIM_DURATION = 30  # seconds
 
 
-# %%%
+# %% Other types of stats
+
+
+def permute_weights(results_df, strategy="structure", n=5_000, sign="lower"):
+    """ """
+    df = results_df.copy()
+
+    # get subject group info
+    true_subject2condition = (
+        df[["subject_ID", "condition"]].drop_duplicates().set_index("subject_ID").condition.to_dict()
+    )
+    all_subjects = df.subject_ID.unique()
+    opto_subjects = [s for s, c in true_subject2condition.items() if c == "opto"]
+    control_subjects = [s for s, c in true_subject2condition.items() if c == "control"]
+    n_opto = len(opto_subjects)
+    n_control = len(control_subjects)
+
+    # get difference in strat weights between stim on and off across subejcts
+    pivot_df = df.pivot(index="subject_ID", columns="stim_trial", values=strategy)
+    subject_diffs = pivot_df.diff(axis=1)[True]
+
+    true_group_diff = subject_diffs.loc[opto_subjects].mean() - subject_diffs.loc[control_subjects].mean()
+
+    permuted_diffs = []
+    for _ in range(n):
+        np.random.shuffle(all_subjects)
+        permuted_opto = all_subjects[:n_opto]
+        permuted_control = all_subjects[n_opto : n_opto + n_control]
+        permuted_diff = subject_diffs.loc[permuted_opto].mean() - subject_diffs.loc[permuted_control].mean()
+        permuted_diffs.append(permuted_diff)
+
+    # get p-value
+    permuted_diffs = np.array(permuted_diffs)
+    if sign == "lower":
+        p_value = np.mean(permuted_diffs <= true_group_diff)
+    elif sign == "upper":
+        p_value = np.mean(permuted_diffs >= true_group_diff)
+    elif sign is None:
+        p_value = np.mean(np.abs(permuted_diffs) >= np.abs(true_group_diff))
+    else:
+        raise ValueError("sign must be 'lower', 'upper' or None")
+    return true_group_diff, permuted_diffs, p_value
+
+
+# %%
 
 
 def plot_mixture_of_strategy_weights(
@@ -96,10 +141,11 @@ def get_group_by_stim_strategy_weights(
         subj_df = df[df.subject_ID == subject]
         condition = subj_df.condition.unique()[0]
         for stim_trial in [True, False]:
-            if stim_only:
-                _df = subj_df[subj_df.stim_trial == stim_trial]
-            else:
-                _df = subj_df[subj_df.stim_on == stim_trial]
+            _df = subj_df[subj_df.stim_trial == stim_trial]
+            # if stim_only:
+            #     _df = subj_df[subj_df.stim_trial == stim_trial]
+            # else:
+            #     _df = subj_df[subj_df.stim_on == stim_trial]
             # fit strategy weights on select data
             strategy_weights = models.get_navigation_strategy_weights(_df, strategies=strategies)
             results.append(
