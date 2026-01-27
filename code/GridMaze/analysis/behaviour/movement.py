@@ -13,6 +13,7 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.stats import ttest_ind
 
 from GridMaze.analysis.core import get_sessions as gs
+from GridMaze.analysis.core import plotting as cp
 
 # %% Global Variables
 from GridMaze.paths import RESULTS_PATH
@@ -20,6 +21,109 @@ from GridMaze.paths import RESULTS_PATH
 FRAME_RATE = 60
 
 MAX_STIM_DURATION = 30  # seconds
+
+
+# %% compare speeds across stim and non-stim trials
+
+
+def plot_stim_speeds_summary(
+    stim_speeds_df, stim_day_range=(6, np.inf), stim_color="#0077FF", print_stats=True, ax=None
+):
+    """ """
+    # filter data
+    df = stim_speeds_df.copy()
+    if stim_day_range:
+        df = df[df.total_stim_days.between(*stim_day_range)]
+    # average across trials within subject
+    _df = df.groupby(["condition", "subject_ID", "stim_trial"]).average_speed.mean().reset_index()
+    cp.plot_group_by_stim(_df, y="average_speed", stim_color=stim_color, print_stats=print_stats, ax=ax)
+
+
+def get_stim_speeds_df(
+    smooth_SD=0.1,
+    sessions=None,
+    jobs=-1,
+    save=False,
+    verbose=False,
+):
+    """ """
+    # load and return if already generated
+    save_path = RESULTS_PATH / "behaviour" / f"stim_speeds.parquet"
+    if not save and save_path.exists():
+        if verbose:
+            print("Loading df from results...")
+        stim_speeds_df = pd.read_parquet(save_path)
+        return stim_speeds_df
+
+    # else generate
+    if sessions is None:
+        # load all stim sessions
+        if verbose:
+            print("Loading all stim sessions...")
+        sessions = gs.get_maze_sessions(
+            subject_IDs="all",
+            conditions="all",
+            stim_only=True,
+            with_data=["trials_df", "navigation_df"],
+            must_have_data=True,
+            verbose=True,
+        )
+    # calc excess steps & other metrics for each session
+    if jobs:
+        dfs = Parallel(n_jobs=jobs)(
+            delayed(get_session_stim_speeds_df)(
+                session,
+                smooth_SD=smooth_SD,
+            )
+            for session in sessions
+        )
+    else:
+        dfs = []
+        for session in sessions:
+            if verbose:
+                print(session.name)
+            _df = get_session_stim_speeds_df(
+                session,
+                smooth_SD=smooth_SD,
+            )
+            dfs.append(_df)
+    stim_speeds_df = pd.concat(dfs, ignore_index=True)
+
+    # save to disk
+    if save:
+        if verbose:
+            print("Saving stim_speeds_df to results...")
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        stim_speeds_df.to_parquet(save_path)
+    return stim_speeds_df
+
+
+def get_session_stim_speeds_df(session, smooth_SD=0.15):
+    """ """
+    navigation_df = session.navigation_df.copy()
+    trials = navigation_df.trial.dropna().unique()
+    results = []
+    for t in trials:
+        trial_df = navigation_df[(navigation_df.trial == t) & (navigation_df.trial_phase == "navigation")]
+        if trial_df.empty:
+            continue
+        speeds = trial_df.speed.values
+        if smooth_SD:
+            speeds = gaussian_filter1d(speeds, sigma=smooth_SD * FRAME_RATE)
+        avg_speed = np.mean(speeds)
+        results.append(
+            {
+                "trial_unique_ID": trial_df.trial_unique_ID.iloc[0],
+                "stim_trial": trial_df.stim_on.any(),
+                "average_speed": avg_speed,
+            }
+        )
+    df = pd.DataFrame(results)
+    df["subject_ID"] = session.subject_ID
+    df["condition"] = session.condition
+    df["maze_name"] = session.maze_name
+    df["total_stim_days"] = session.total_stim_days
+    return df
 
 
 # %%
