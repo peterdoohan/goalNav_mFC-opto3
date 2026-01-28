@@ -1,38 +1,43 @@
-'''A script to send jobs to HPC cluster via SLURM for parallel processing of brainreg.
+"""A script to send jobs to HPC cluster via SLURM for parallel processing of brainreg.
 Code here also included to check orientation from downsampled stacks.
-@charlesdgburns'''
+@charlesdgburns"""
 
-## setup ## 
+## setup ##
 import os
 import sys
 import pandas as pd
 from pathlib import Path
-#to check data orientation:
-import tifffile 
+
+# to check data orientation:
+import tifffile
 import matplotlib.pyplot as plt
-from brainreg_probe import plot_util_func as puf
+from brainreg_fiber import plot_util_func as puf
 
 ## Global variables ##
-RAW_HISTOLOGY_PATH = Path("../data/raw_data/histology")               # Contains /<subject_ID>/brainsaw_output
-PREPROCESSED_BRAINREG_PATH = Path("../data/preprocessed_data/brainreg")  # Will contain brainreg/<subject_ID>/<atlas_name>/outputs
-JOBS_PATH = Path("./Jobs/brainreg")               # Stores SLURM scripts and logs
+RAW_HISTOLOGY_PATH = Path("../data/raw_data/histology")  # Contains /<subject_ID>/brainsaw_output
+PREPROCESSED_BRAINREG_PATH = Path(
+    "../data/preprocessed_data/brainreg"
+)  # Will contain brainreg/<subject_ID>/<atlas_name>/outputs
+JOBS_PATH = Path("./brainreg_fiber/jobs")  # Stores SLURM scripts and logs
 for jobs_folder in ["slurm", "out", "err"]:
-    (JOBS_PATH/jobs_folder).mkdir(parents=True, exist_ok=True)
-            
-ATLAS_NAME = 'allen_mouse_10um'
+    (JOBS_PATH / jobs_folder).mkdir(parents=True, exist_ok=True)
+
+ATLAS_NAME = "allen_mouse_10um"
 # specify subjects here as a list, otherwise assume that they are subdirs to raw_histology_path
-SUBJECT_IDS = [p.stem for p in RAW_HISTOLOGY_PATH.iterdir()]
+SUBJECT_IDS = [p.stem for p in RAW_HISTOLOGY_PATH.iterdir() if p.name != "raw_compressed"]
 # MAKE SURE TO CHECK THE RAW DATA ORIENTATION ON NAPARI. OPTION HERE TO SPECIFY PER SUBJECT.
 # PLEASE RUN  'check_brain_orientations()' in accordance with brainglobe image space definition.
-SUBJECT_ID2ORIENTATION = {each_subject:'psl' for each_subject in SUBJECT_IDS}
+SUBJECT_ID2ORIENTATION = {each_subject: "psl" for each_subject in SUBJECT_IDS}
 # SELECT CHANNELS: usually 2 is red, 3 is green, 4 is blue.
-SIGNAL_CHANNEL = 2 #this is the channel with probe dye in it
-REGISTRATION_CHANNEL = 3 #this is the channel we want to register to; green is less flourescent than red and less noisy than blue.
+SIGNAL_CHANNEL = 2  # this is the channel with probe dye in it
+REGISTRATION_CHANNEL = (
+    3  # this is the channel we want to register to; green is less flourescent than red and less noisy than blue.
+)
 
 
-## top level function ##
-def run_brainreg(overwrite = False):
-    '''Submit jobs to HPC cluster via slurm to run brainreg'''
+# %% top level function
+def run_brainreg(overwrite=False):
+    """Submit jobs to HPC cluster via slurm to run brainreg"""
     brainreg_paths_df = get_brainreg_paths_df()
     if not overwrite:
         brainreg_paths_df = brainreg_paths_df[~brainreg_paths_df.brainreg_completed]
@@ -46,62 +51,67 @@ def run_brainreg(overwrite = False):
     print("All brainreg jobs submitted to HPC. Check progress with 'squeue -u <username>'")
 
 
-## subfunctions ##
+# %% subfunctions
+
 
 def check_brain_orientations():
     for subject_ID in SUBJECT_IDS:
-        subject_path = RAW_HISTOLOGY_PATH/subject_ID
-        downsampled_files = [x for x in (subject_path/'downsampled_stacks/025_micron').iterdir() if '.tif' in str(x)]
+        subject_path = RAW_HISTOLOGY_PATH / subject_ID
+        downsampled_files = [x for x in (subject_path / "downsampled_stacks/025_micron").iterdir() if ".tif" in str(x)]
         data = tifffile.imread(downsampled_files[0])
-        first_axis_coords = [0,50,100,200]
-        fig, ax = plt.subplots(1,len(first_axis_coords), figsize = ( 3*len(first_axis_coords),3))
+        first_axis_coords = [0, 50, 100, 200]
+        fig, ax = plt.subplots(1, len(first_axis_coords), figsize=(3 * len(first_axis_coords), 3))
         for i, first_idx in enumerate(first_axis_coords):
             contrast_adjusted = puf.adjust_contrast(data[first_idx])
-            ax[i].imshow(contrast_adjusted, cmap = 'gray')
-            ax[i].set_title(f'{subject_ID} | data[{first_idx},:,:]')
-            ax[i].scatter(0,0, color='red', s=100, zorder=3)
+            ax[i].imshow(contrast_adjusted, cmap="gray")
+            ax[i].set_title(f"{subject_ID} | data[{first_idx},:,:]")
+            ax[i].scatter(0, 0, color="red", s=100, zorder=3)
         fig.tight_layout()
-        save_path = (PREPROCESSED_BRAINREG_PATH/subject_ID/'orientation_check.png')
+        save_path = PREPROCESSED_BRAINREG_PATH / subject_ID / "orientation_check.png"
         if not save_path.parent.exists():
             print(f"creating {save_path.parent} to save img.")
             save_path.parent.mkdir(exist_ok=True, parents=True)
         fig.savefig(save_path)
-        print(f'Saved plot to: {save_path}')
+        print(f"Saved plot to: {save_path}")
         plt.show()
 
 
-def get_brainreg_paths_df(raw_data_path = RAW_HISTOLOGY_PATH):
-
-    #initialise dataframe as a dictionary
-    paths_dict = {'subject_ID':[], 
-                  'input_path':[],
-                  'output_path':[],
-                  'signal_path':[],
-                  'recipe_path':[],
-                  'brainreg_completed':[],
-                  'orientation':[]}
+def get_brainreg_paths_df():
+    # initialise dataframe as a dictionary
+    paths_dict = {
+        "subject_ID": [],
+        "input_path": [],
+        "output_path": [],
+        "signal_path": [],
+        "recipe_path": [],
+        "brainreg_completed": [],
+        "orientation": [],
+    }
     for each_subject in SUBJECT_IDS:
-        subject_histology_path = RAW_HISTOLOGY_PATH/each_subject/'stitchedImages_100'
-        
-        #for each_channel in os.listdir(subject_histology_path):
-        paths_dict['subject_ID'].append(each_subject)
-        paths_dict['input_path'].append(subject_histology_path/str(REGISTRATION_CHANNEL))
-        paths_dict['output_path'].append(PREPROCESSED_BRAINREG_PATH/each_subject/ATLAS_NAME)
-        if Path(subject_histology_path/str(SIGNAL_CHANNEL)).exists():
-            paths_dict['signal_path'].append(subject_histology_path/str(SIGNAL_CHANNEL))
-        else:
-            print(f'OBS: No signal channel data found for {each_subject}, proceeding without it.')
-            paths_dict['signal_path'].append('none')
+        subject_histology_path = RAW_HISTOLOGY_PATH / each_subject / "stitchedImages_100"
 
-        paths_dict['recipe_path'].append(list(paths_dict['input_path'][-1].parent.parent.glob("recipe*"))[0])
-        paths_dict['brainreg_completed'].append(paths_dict['output_path'][-1].exists())
-        paths_dict['orientation'].append(SUBJECT_ID2ORIENTATION[each_subject])
+        # for each_channel in os.listdir(subject_histology_path):
+        paths_dict["subject_ID"].append(each_subject)
+        paths_dict["input_path"].append(subject_histology_path / str(REGISTRATION_CHANNEL))
+        paths_dict["output_path"].append(PREPROCESSED_BRAINREG_PATH / each_subject / ATLAS_NAME)
+        if Path(subject_histology_path / str(SIGNAL_CHANNEL)).exists():
+            paths_dict["signal_path"].append(subject_histology_path / str(SIGNAL_CHANNEL))
+        else:
+            print(f"OBS: No signal channel data found for {each_subject}, proceeding without it.")
+            paths_dict["signal_path"].append("none")
+
+        paths_dict["recipe_path"].append(list(paths_dict["input_path"][-1].parent.parent.glob("recipe*"))[0])
+        paths_dict["brainreg_completed"].append(paths_dict["output_path"][-1].exists())
+        paths_dict["orientation"].append(SUBJECT_ID2ORIENTATION[each_subject])
 
     return pd.DataFrame(paths_dict)
-    
+
+
 def _q(x) -> str:
     import shlex
+
     return shlex.quote(str(x))
+
 
 def get_brainreg_SLURM_script(br_info, RAM="64GB", time_limit="23:59:00"):
     """
@@ -143,10 +153,11 @@ nvidia-smi
 echo "Running brainreg"
 {cmd}
 """
-    script_path = JOBS_PATH/'slurm'/f'brainreg_{session_ID}.sh'
+    script_path = JOBS_PATH / "slurm" / f"brainreg_{session_ID}.sh"
     with open(script_path, "w") as f:
         f.write(script)
     return script_path
+
 
 def get_voxel_sizes(recipe_path):
     import yaml
@@ -157,5 +168,3 @@ def get_voxel_sizes(recipe_path):
             return params["VoxelSize"]
         except yaml.YAMLError as exc:
             print(exc)
-
-    
