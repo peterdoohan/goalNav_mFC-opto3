@@ -80,6 +80,8 @@ def get_brainreg_paths_df():
     # initialise dataframe as a dictionary
     paths_dict = {
         "subject_ID": [],
+        "histology_path": [],
+        "brainreg_path": [],
         "input_path": [],
         "output_path": [],
         "signal_path": [],
@@ -92,6 +94,8 @@ def get_brainreg_paths_df():
 
         # for each_channel in os.listdir(subject_histology_path):
         paths_dict["subject_ID"].append(each_subject)
+        paths_dict["histology_path"].append(RAW_HISTOLOGY_PATH / each_subject)
+        paths_dict["brainreg_path"].append(PREPROCESSED_BRAINREG_PATH / each_subject)
         paths_dict["input_path"].append(subject_histology_path / str(REGISTRATION_CHANNEL))
         paths_dict["output_path"].append(PREPROCESSED_BRAINREG_PATH / each_subject / ATLAS_NAME)
         if Path(subject_histology_path / str(SIGNAL_CHANNEL)).exists():
