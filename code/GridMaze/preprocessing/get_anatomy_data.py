@@ -30,6 +30,10 @@ def process_anatomy_data(
     verbose=True,
 ):
     """ """
+    for ds in data_structures:
+        if ds not in ["registered_signal", "fiber_coordinates", "anatomy_info"]:
+            raise ValueError(f"data structure {ds} not recognised")
+
     subject_data_directory = dd.get_subject_data_directory()
     for subject_dir in subject_data_directory.itertuples():
         if verbose:
@@ -58,6 +62,9 @@ def save_registered_virus_signal(subject_dir, overwrite=False):
     new_data_path = subject_data_path / "registered_signal.tiff"
     # flouroescent signal warped to allen atlas space in preprocessing
     brainreg_output = subject_dir.brainreg_path / "allen_mouse_10um" / f"downsampled_standard_{SIGNAL_CHANNEL}.tiff"
+    if not brainreg_output.exists():
+        print(f"  - registered signal not found for subject {subject_dir.subject_ID}, skipping...")
+        return
     # execute copy
     if not new_data_path.exists() or overwrite:
         shutil.copyfile(brainreg_output, new_data_path)
@@ -75,6 +82,9 @@ def save_fiber_coordinates(subject_dir, overwrite=False):
         _coords = {}
         for position in ["top", "bottom"]:
             manual_label_path = subject_dir.brainreg_path / "fiber_coordinates" / f"{label}_{position}.csv"
+            if not manual_label_path.exists():
+                print(f"  - labelled fiber coords not found: {manual_label_path} \n generate from napari")
+                return
             coord_tuple = tuple(pd.read_csv(manual_label_path, header=None).iloc[0])  # in allen atlas voxels
             _coords[position] = coord_tuple
         fiber_coordinates[label] = _coords
