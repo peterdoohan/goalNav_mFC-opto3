@@ -13,6 +13,7 @@ from GridMaze.preprocessing import get_frames_dfs as fd
 from GridMaze.preprocessing.get_session_info import get_session_info
 from GridMaze.preprocessing.get_pycontrol_dfs import get_events_df, get_trials_df
 from GridMaze.preprocessing.get_data_directory import get_sessions_data_directory
+from GridMaze.preprocessing import get_anatomy_data as gad
 
 
 # %% Global Variables
@@ -34,6 +35,8 @@ for subject in SUBJECT_IDS:
 
 def populate_processed_data(
     session_data_streams=["pycontrol", "session_info", "video"],
+    populate_anatomy_data=True,
+    anatomy_data_structures=["registered_signal", "fiber_coordinates", "anatomy_info"],
     subject_IDs="all",
     session_dates="all",
     overwrite=False,
@@ -98,6 +101,11 @@ def populate_processed_data(
         print("The following sessions failed to process:")
         for session in failed_sessions:
             print(session)
+
+    if populate_anatomy_data:
+        print("Processing anatomy data")
+        gad.process_anatomy_data(anatomy_data_structures, overwrite=overwrite, verbose=True)
+
     return print("Finished populating processed data")
 
 

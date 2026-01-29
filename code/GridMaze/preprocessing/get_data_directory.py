@@ -26,6 +26,8 @@ from GridMaze.paths import (
     PYCONTROL_PATH,
     VIDEO_PATH,
     SLEAP_PATH,
+    HISTOLOGY_PATH,
+    BRAINREG_PATH,
 )
 
 with open(EXPERIMENT_INFO_PATH / "start_date.json", "r") as infile:
@@ -53,7 +55,27 @@ SUBJECT_INFO_DF = pd.read_csv(EXPERIMENT_INFO_PATH / "subject_info_df.htsv", sep
 
 
 FRAME_RATE = 60  # Hz
-# %% new
+# %%
+
+
+def get_subject_data_directory():
+    """
+    Gather paths for subject level data: for this experiment
+    raw histology and brain reg
+    """
+    info = [
+        {
+            "subject_ID": s,
+            "condition": SUBJECT_INFO_DF[SUBJECT_INFO_DF.subject_ID == s].condition.values[0],
+            "histology_path": HISTOLOGY_PATH / s,
+            "brainreg_path": BRAINREG_PATH / s,
+        }
+        for s in SUBJECT_IDS
+    ]
+    return pd.DataFrame(info)
+
+
+# %%
 
 
 def get_sessions_data_directory():

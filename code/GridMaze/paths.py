@@ -20,6 +20,10 @@ VIDEO_PATH = RAW_DATA_PATH / "video"
 
 SLEAP_PATH = PREPROCESSED_DATA_PATH / "SLEAP"
 
+HISTOLOGY_PATH = RAW_DATA_PATH / "histology"
+
+BRAINREG_PATH = PREPROCESSED_DATA_PATH / "brainreg"
+
 PROCESSED_DATA_PATH = Path("../data/processed_data")
 ANALYSIS_DATA_PATH = Path("../data/analysis_data")
 

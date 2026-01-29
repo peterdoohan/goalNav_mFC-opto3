@@ -189,6 +189,11 @@ SUBJECT_INFO_DF = pd.DataFrame(
         },
     ]
 )
+
+CONDITION2VIRUS = {
+    "opto": "AAV1-CKIIa-stGtACR2-FusionRed",
+    "control": "AAV1-CaMKIIa-mCherry",
+}
 # %% Misc
 
 IGNORE_SESSIONS = [
@@ -449,6 +454,7 @@ FILENAME2DATA_STRUCTURE = {
     "ignore_sessions": IGNORE_SESSIONS,
     "days_off": DAYS_OFF,
     "session_notes": SESSION_NOTES,
+    "condition2virus": CONDITION2VIRUS,
 }
 
 
