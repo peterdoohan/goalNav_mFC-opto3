@@ -10,13 +10,12 @@ from math import ceil, floor
 from matplotlib import pyplot as plt
 
 from skimage.measure import label
-from scipy.ndimage import gaussian_filter
 from brainglobe_atlasapi import BrainGlobeAtlas
 
 from GridMaze.analysis.core.get_anatomy import SubjectAnatomy
 
 # %% Global Variables
-from GridMaze.paths import EXPERIMENT_INFO_PATH
+from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
 
 SUBJECT_INFO_DF = pd.read_csv(EXPERIMENT_INFO_PATH / "subject_info_df.htsv", sep="\t")
 
@@ -26,36 +25,74 @@ ATLAS = "allen_mouse_10um"
 
 def plot_anatomy_summary(
     anatomy_df,
-    consider_regions=["PL", "ILA", "ORBm", "ORBvl", "ACAv"],
-    colors=["mediumvioletred", "violet", "blueviolet", "darkslateblue", "cornflowerblue"],
+    consider_regions=[
+        "PL",
+        "ILA",
+        "ACAv",
+        "ORBm",
+        "ORBvl",
+    ],
+    colors=[
+        "mediumvioletred",
+        "violet",
+        "cornflowerblue",
+        "blueviolet",
+        "darkslateblue",
+    ],
+    subject_order=[
+        "mFC-opto_38",
+        "mFC-opto_23",
+        "mFC-opto_36",
+        "mFC-opto_31",
+        "mFC-opto_27",
+        "mFC-opto_30",
+        "mFC-opto_26",
+    ],
+    voxel_size_um=10.0,
+    log_scale=False,
     ax=None,
 ):
     """ """
-    df = anatomy_df.groupby(["subject_ID", "simple_name"]).voxels.sum().unstack()
     # set up figure
     if ax is None:
         f, ax = plt.subplots(1, 1, figsize=(2.5, 3))
     ax.spines[["left", "top", "right"]].set_visible(False)
-    ax.set_ylabel("estimated volume silenced \n (um$^3$)")
+    ax.set_ylabel("Estimated Silenced \n Volume (um$^3$)")
     ax.set_xlabel("Subjects")
-    # set order of regions
+
+    # get volume per region per subject
+    df = anatomy_df.groupby(["subject_ID", "simple_name"]).voxels.sum().unstack()
+    df = df.div(voxel_size_um**3)  # convert to um^3
     df = df[consider_regions]
+    if subject_order is not None:
+        df = df.reindex(subject_order)
+
+    # plot
     df.plot(kind="bar", stacked=True, ax=ax, color=colors, alpha=0.5, width=0.8)
     ax.tick_params(axis="x", rotation=30)
     ax.legend(loc="lower left", bbox_to_anchor=(1.05, 0.5), ncol=1, fontsize=10)
-    return
+    if log_scale:
+        ax.set_yscale("log")
 
 
 def get_opto_anatomy_df(
     condition="opto",
     restrict_to_fiber_tip=True,
+    signal_threshold=200,
     blob_cleaning_kwargs={"n_blobs": 2, "connectivity": 3},
     cone_mask_kwargs={"cone_angle_deg": 40, "depth_um": 500, "voxel_size_um": 10.0},
     atlas=None,
     atlas_annotations=None,
     verbose=True,
+    save=False,
 ):
     """ """
+    save_path = RESULTS_PATH / "anatomy" / f"{condition}_region_summary.csv"
+    if not save and save_path.exists():
+        if verbose:
+            print(f"Loading existing anatomy summary from {save_path}")
+        return pd.read_csv(save_path)
+
     # load atlas and annotations
     if atlas is None:
         atlas = BrainGlobeAtlas(ATLAS)
@@ -71,7 +108,7 @@ def get_opto_anatomy_df(
         subject_anatomy = SubjectAnatomy(subject, with_data=["registered_signal", "fiber_coordinates"])
         signal_data = subject_anatomy.registered_signal
         # threshold signal
-        thresh_signal = threshold_signal(signal_data, threshold=200)
+        thresh_signal = threshold_signal(signal_data, threshold=signal_threshold)
         # clean thresholded signal (remove nose, keep only large expression zones)
         expression_mask = keep_n_largest_blobs(
             thresh_signal,
@@ -102,7 +139,10 @@ def get_opto_anatomy_df(
         df = get_blob_anatomy_summary(opto_mask, atlas, atlas_annotations)
         df["subject_ID"] = subject
         dfs.append(df)
-    return pd.concat(dfs, ignore_index=True)
+    results_df = pd.concat(dfs, ignore_index=True)
+    if save:
+        results_df.to_csv(save_path, index=False)
+    return results_df
 
 
 # %% fiber tip masks
