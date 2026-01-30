@@ -110,6 +110,29 @@ def plot_random_effects_summary(
     ax=None,
 ):
     """ """
+    df = _get_group_by_stim_df(
+        df,
+        y=y,
+        stim_day_range=stim_day_range,
+        outlier_thres=outlier_thres,
+        ignore_sessions_with_issues_noted=ignore_sessions_with_issues_noted,
+        ignore_first_trial_after_stim=ignore_first_trial_after_stim,
+    )
+
+    # plot cross subject mean ± SEM
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(2, 3))
+    cp.plot_group_by_stim(df, y=y, ax=ax, stim_color=stim_color, print_stats=print_stats)
+
+
+def _get_group_by_stim_df(
+    df,
+    y="n_excess_steps",
+    stim_day_range=(6, np.inf),
+    outlier_thres=500,
+    ignore_sessions_with_issues_noted=False,
+    ignore_first_trial_after_stim=False,
+):
     # filter data
     _df = df.copy()
     if stim_day_range is not None:
@@ -123,11 +146,7 @@ def plot_random_effects_summary(
 
     # average excess steps per subject over trials
     df = _df.groupby(["condition", "subject_ID", "stim_trial"])[y].mean().reset_index()
-
-    # plot cross subject mean ± SEM
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=(2, 3))
-    cp.plot_group_by_stim(df, y=y, ax=ax, stim_color=stim_color, print_stats=print_stats)
+    return df
 
 
 # %% excess steps functions
