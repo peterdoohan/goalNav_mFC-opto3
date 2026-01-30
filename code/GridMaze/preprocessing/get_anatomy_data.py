@@ -85,8 +85,8 @@ def save_fiber_coordinates(subject_dir, overwrite=False):
             if not manual_label_path.exists():
                 print(f"  - labelled fiber coords not found: {manual_label_path} \n generate from napari")
                 return
-            coord_tuple = tuple(pd.read_csv(manual_label_path, header=None).iloc[0])  # in allen atlas voxels
-            _coords[position] = coord_tuple
+            coord = pd.read_csv(manual_label_path).iloc[0][1:]  # in allen atlas voxels
+            _coords[position] = tuple(coord)
         fiber_coordinates[label] = _coords
     # save to json
     if not new_data_path.exists() or overwrite:
@@ -99,6 +99,7 @@ def save_anatomy_info(subject_dir, overwrite=False):
     info = {
         "virus": CONDITION2VIRUS[subject_dir.condition],
         "atlas": "allen_mouse_10um",
+        "voxel_size_um": ALLEN_ATALAS_RES,
         "signal_channel": SIGNAL_CHANNEL,
         "signal_color": SIGNAL_COLOR,
         "n_fibers": 2,
