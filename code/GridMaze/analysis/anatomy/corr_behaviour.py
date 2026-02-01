@@ -69,7 +69,10 @@ def plot_anat_corr_behaviour(
         xlabel = "Est. inhibited \n Volume (um$^3$)"
     else:
         # consider ratio between regions
-        anat_2 = anatomy_df[anatomy_df.simple_name.isin(ratio)]
+        if ratio == "all":
+            anat_2 = anatomy_df
+        else:
+            anat_2 = anatomy_df[anatomy_df.simple_name.isin(ratio)]
         anat_2_values = anat_2.groupby("subject_ID").voxels.sum()  # convert to um3
         anat_2_values = anat_2_values.div(10**3)
         anat_values = anat_values.div(anat_2_values)
