@@ -27,14 +27,13 @@ MAX_STIM_DURATION = 30  # seconds
 # %%
 
 
-def get_prop_optimal_df(
+def plot_prop_optimal(
     navigation_strategies_df,
-    strat_1="vector",
-    strat_2="structure",
+    strat_pairs=[("vector", "structure"), ("vector", "habit"), ("structure", "habit")],
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     stim_only=False,
     decision_points_only=False,
-    ax=None,
+    axes=None,
 ):
     """ """
     df = navigation_strategies_df.copy()
@@ -45,28 +44,46 @@ def get_prop_optimal_df(
     if decision_points_only:
         # nodes with degree 3 or 4
         df = df[df.available.sum(axis=1).gt(2)]
-    # filter for points where strats disagree
-    opt_mask = df.optimal_action.values.astype(bool)
-    (x_probs * opt_mask).sum(axis=1) / opt_mask.sum(axis=1)
 
-    v1 = df[strat_1].copy()
-    v1[df.available] = -1
-    v2 = df[strat_2].copy()
-    v2[df.available] = -1
-    v1_choice = v1.eq(df.idxmax(axis=1))
-    v2_choice = v2.eq(1)
-    col_positions = v2_choice.columns.get_indexer(v1_choice)
-    arr = v2_choice.to_numpy(dtype=bool)
-    mask = arr[np.arange(len(v2_choice)), col_positions]
-    df = df[mask]
-    # on filtered data not if subjects were correct
-    df[("correct", "")] = (df.subject_choice.eq(df.optimal_action) & df.subject_choice.eq(1)).any(axis=1)
+    # set up fig
+    if axes is None:
+        fig, axes = plt.subplots(1, len(strat_pairs), figsize=(2 * len(strat_pairs), 3))
 
-    res = df.groupby(["subject_ID", "condition", "stim_trial"]).correct.mean().reset_index(name="correct")
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=(2, 3))
-    cp.plot_group_by_stim(res, y="correct", print_stats=True, ax=ax)
-    ax.set_ylim(0.60, 0.9)
+    # define correct choices
+    df[("correct", "")] = ((df.subject_choice == 1) & (df.optimal_action == 1)).any(axis=1)
+    # filter for points where strats disagree (tie-aware and availability-aware)
+    for (strat_1, strat_2), ax in zip(strat_pairs, axes):
+        s1 = df[strat_1].copy()
+        s2 = df[strat_2].copy()
+        available_df = df.available.copy()
+        s1_choice_mask = _tied_argmax_mask(s1, available_df=available_df)
+        s2_choice_mask = _tied_argmax_mask(s2, available_df=available_df)
+        disagree_mask = ~(s1_choice_mask & s2_choice_mask).any(axis=1)
+        df = df.loc[disagree_mask]
+        print(disagree_mask.mean())
+        # on filtered data not if subjects were correct get group x stim
+        res = df.groupby(["subject_ID", "condition", "stim_trial"]).correct.mean().reset_index(name="prob_correct")
+        _max = res.prob_correct.max() + 0.1
+        _min = res.prob_correct.min() - 0.1
+        cp.plot_group_by_stim(res, y="prob_correct", print_stats=True, legend=False, ax=ax)
+        ax.set_ylim(_min, _max)
+        ax.set_xlabel(f"{strat_1} \n != \n {strat_2}")
+
+
+def _tied_argmax_mask(action_values_df, available_df=None):
+    """Return a boolean (n_rows x n_actions) mask for all tied argmax actions.
+    If available_df is provided, unavailable actions are excluded from the argmax.
+    """
+    if not isinstance(action_values_df, pd.DataFrame):
+        raise TypeError("action_values_df must be a pandas DataFrame")
+
+    values = action_values_df.to_numpy(dtype=float)
+    avail = available_df.values.astype(bool)
+    values = np.where(avail, values, -np.inf)
+
+    row_max = np.nanmax(values, axis=1)
+    tied = np.isclose(values, row_max[:, None], rtol=0.0, atol=0.0, equal_nan=False)
+    return tied
 
 
 # %% Functions
