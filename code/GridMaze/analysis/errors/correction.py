@@ -62,9 +62,12 @@ def plot_prob_backtrack_after_error(
     stim_color="#0077FF",
     axes=None,
     x_range=None,
+    nan_at_error=True,
 ):
     """ """
     df = results_df.copy()
+    if nan_at_error:
+        df[("error_offset", 0)] = np.nan  # set error offset 0 to nan for plotting
 
     # set up figure
     if axes is None:

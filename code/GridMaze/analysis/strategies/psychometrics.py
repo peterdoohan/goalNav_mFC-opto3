@@ -9,6 +9,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from pingouin import mixed_anova
 from scipy.optimize import curve_fit
+from tabulate import tabulate
 
 
 from GridMaze.analysis.core import get_sessions as gs
@@ -100,7 +101,6 @@ def plot_sigmoid_fit_params(fit_df, p=["alpha", "beta", "gamma", "lambda"], stim
             ax=ax,
             stim_color=stim_color,
             print_stats=True,
-            allow_neg=False,
             legend=False,
         )
 
@@ -131,6 +131,7 @@ def plot_habit_psychometrics_inset(
     group="opto",
     habit_value_range=(0, 0.25),
     stim_color="#0077FF",
+    print_stats=True,
     ax=None,
 ):
     # set up fig
@@ -143,6 +144,19 @@ def plot_habit_psychometrics_inset(
     df = psy_curve_df.copy()
     df["habit_value"] = df.habit_value.astype(float)
     df = df[df.habit_value.between(*habit_value_range)]
+    habit_values = df.habit_value.unique()
+    if print_stats:
+        for v in habit_values:
+            stats_df = mixed_anova(
+                dv="p_correct",
+                within="stim_trial",
+                between="condition",
+                subject="subject_ID",
+                data=df[df.habit_value == v],
+            )
+            print(f"Mixed ANOVA: habit-value {v}")
+            print(tabulate(stats_df, headers="keys", tablefmt="psql", showindex=False))
+
     grouped_df = df.groupby(["condition", "stim_trial", "habit_value"], observed=True).p_correct
     mean = grouped_df.mean()
     sem = grouped_df.sem()

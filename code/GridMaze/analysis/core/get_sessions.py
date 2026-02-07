@@ -83,6 +83,7 @@ def get_maze_sessions(
         requested_sessions = []
         for subject_ID in subject_IDs:
             session_folders = list((PROCESSED_DATA_PATH / subject_ID).glob("*"))
+            session_folders = [f for f in session_folders if f.name != "anatomy"]  # exclude anatomy folder
             for session_folder in session_folders:
                 if not session_folder.is_dir():
                     continue

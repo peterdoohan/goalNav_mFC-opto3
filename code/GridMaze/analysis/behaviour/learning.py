@@ -174,7 +174,7 @@ def plot_expert_performance_summary(
         control_trials = subj_av[subj_av.condition == "control"].total_trials
         opto_trials = subj_av[subj_av.condition == "opto"].total_trials
         t_stat, p_val = ttest_ind(control_trials, opto_trials)
-        print(f"random effects t-test: t={t_stat:.2f}, p={p_val:.3f}")
+        print(f"random effects t-test: t({len(subj_av) - 2})={t_stat:.2f}, p={p_val:.3f}")
 
 
 def get_expert_performance_df(sessions=None, verbose=False, ignore_low_laser_power_sessions=False):

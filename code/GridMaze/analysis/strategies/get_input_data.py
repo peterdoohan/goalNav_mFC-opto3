@@ -384,6 +384,7 @@ def get_init_df(
             ("subject_ID", ""): session.subject_ID,
             ("condition", ""): session.condition,
             ("maze_name", ""): session.maze_name,
+            ("maze_order", ""): session.maze_order,
             ("day_on_maze", ""): session.day_on_maze,
             ("stim_day", ""): session.stim_day,
             ("total_stim_days", ""): session.total_stim_days,

@@ -80,8 +80,6 @@ def plot_mixture_of_strategy_weights(
     strategies = [c for c in results_df.columns if c not in ["subject_ID", "condition", "stim_trial"]]
     if axes is None:
         fig, axes = plt.subplots(1, len(strategies), figsize=(2 * len(strategies), 3.5))
-    for ax in axes:
-        ax.axhline(0, color="k", ls="--", alpha=0.5)
 
     colors = sns.color_palette(cmap, len(strategies))
     for strategy, color, ax in zip(strategies, colors, axes):
