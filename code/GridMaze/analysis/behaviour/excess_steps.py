@@ -128,9 +128,9 @@ def plot_delta_excess_steps_fit_slopes(
         t_cont, p_cont = ttest_1samp(control_slopes, 0)
         t_opto, p_opto = ttest_1samp(opto_slopes, 0)
         print("T-tests on slope from delta xs steps linear fit:")
-        print(f"  control vs opto: t={t_cond:.2f}, p={p_cond:.3f}")
-        print(f"  control vs 0: t={t_cont:.2f}, p={p_cont:.3f}")
-        print(f"  opto vs 0: t={t_opto:.2f}, p={p_opto:.3f}")
+        print(f"  control vs opto: t({len(control_slopes) + len(opto_slopes) - 2})={t_cond:.2f}, p={p_cond:.3f}")
+        print(f"  control vs 0: t({len(control_slopes) - 1})={t_cont:.2f}, p={p_cont:.3f}")
+        print(f"  opto vs 0: t({len(opto_slopes) - 1})={t_opto:.2f}, p={p_opto:.3f}")
 
     return
 
@@ -506,7 +506,7 @@ def plot_excess_steps_by_goal_heatmap_summary(
                 ax = axes[i, j]
                 ax.set_title(f"{group} - stim:{stim_trial}")
                 hm = pd.concat([plot_df.loc[(group, stim_trial)], pd.Series(0, index=edges)])
-                clabel = "excess steps" if i == 1 and j == 1 else None
+                clabel = "excess steps"
                 mp.plot_simple_heatmap(
                     simple_maze,
                     hm,
@@ -531,7 +531,7 @@ def plot_excess_steps_by_goal_heatmap_summary(
         _max = delta_df.max() if vmax is None else vmax
         for ax, group in zip(axes, ["control", "opto"]):
             ax.set_title(f"{group} (stim_on - stim_off)")
-            clabel = "Δ excess steps" if group == "opto" else None
+            clabel = "Δ excess steps"
             hm = pd.concat([delta_df.loc[group], pd.Series(0, index=edges)])
             mp.plot_simple_heatmap(
                 simple_maze,

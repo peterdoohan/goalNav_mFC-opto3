@@ -40,7 +40,9 @@ def plot_anat_corr_behaviour(
         # run standard mix strats analysis to get weights
         if weights_df is None:
             strategies = ["vector", "structure", "habit", "backtracking_penalty"]
-            navigation_strategies_df = gid.get_navigation_strategies_df(strategies=strategies, close_far_cutoff=4)
+            navigation_strategies_df = gid.get_navigation_strategies_df(
+                strategies=strategies,
+            )
             weights_df = oe.get_group_by_stim_strategy_weights(
                 navigation_strategies_df,
                 strategies=strategies,
