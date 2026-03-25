@@ -19,6 +19,8 @@ MAX_STIM_DURATION = 30
 
 from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
 
+RESULTS_DIR = RESULTS_PATH / "behaviour"
+
 with (EXPERIMENT_INFO_PATH / "subject_IDs.json").open("r") as infile:
     SUBJECT_IDS = json.load(infile)
 
@@ -110,7 +112,16 @@ def get_error_centered_df(
     ignore_degree_one_nodes=False,
     optimal_only=False,
     n_jobs=-1,
+    save=False,
 ):
+    save_path = RESULTS_DIR / "error_backtracking_df.parquet"
+    if not save and save_path.exists():
+        results_df = pd.read_parquet(save_path)  # need to fix column dtyes
+        results_df.columns = pd.MultiIndex.from_tuples(
+            [(x[0], int(x[1])) if x[0] == "error_offset" else x for x in results_df.columns.values]
+        )
+        return results_df
+
     df = err._filter_error_df(
         error_df,
         e="error",
@@ -157,4 +168,7 @@ def get_error_centered_df(
     else:
         dfs = [_process_trial(df, t) for t in trial_unique_IDs]
     dfs = [d for d in dfs if d is not None]
-    return pd.concat(dfs, ignore_index=True)
+    results_df = pd.concat(dfs, ignore_index=True)
+    if save:
+        results_df.to_parquet(save_path)
+    return results_df
