@@ -184,9 +184,10 @@ def plot_habit_psychometrics_inset(
 
 def plot_habit_psychometrics_summary(
     psy_curve_df,
+    x="habit",
     stim_color="#0077FF",
     print_stats=True,
-    fit="sigmoid",
+    fit="log_sigmoid",
     axes=None,
 ):
     """ """
@@ -195,11 +196,11 @@ def plot_habit_psychometrics_summary(
         f, axes = plt.subplots(1, 2, figsize=(4, 2.5), sharey=True, sharex=True)
     for ax in axes:
         ax.spines[["top", "right"]].set_visible(False)
-        ax.set_xlabel("correct \n habit value")
+        ax.set_xlabel(f"correct \n {x} value")
         ax.axvline(0.5, color="k", ls="--", alpha=0.5)
     axes[0].set_ylabel("P(correct)")
 
-    grouped_df = psy_curve_df.groupby(["condition", "stim_trial", "habit_value"], observed=True).p_correct
+    grouped_df = psy_curve_df.groupby(["condition", "stim_trial", f"{x}_value"], observed=True).p_correct
     mean = grouped_df.mean()
     sem = grouped_df.sem()
     for ax, cond in zip(axes, ["control", "opto"]):
@@ -218,11 +219,11 @@ def plot_habit_psychometrics_summary(
                 alpha=1,
             )
             # plot fitted sigmoid curve
-            x, y = _mean.index.values.astype(float), _mean.values.astype(float)
+            x_vals, y_vals = _mean.index.values.astype(float), _mean.values.astype(float)
             if fit == "sigmoid":
-                x_fit, y_fit = get_sigmoid_curve(x, y)
+                x_fit, y_fit = get_sigmoid_curve(x_vals, y_vals)
             elif fit == "log_sigmoid":
-                x_fit, y_fit = get_log_sigmoid_curve(x, y)
+                x_fit, y_fit = get_log_sigmoid_curve(x_vals, y_vals)
             else:
                 raise ValueError("fit_model must be 'sigmoid' or 'log_sigmoid'")
             ax.plot(x_fit, y_fit, color=color)
@@ -232,16 +233,20 @@ def plot_habit_psychometrics_summary(
     axes[0].legend(fontsize="x-small")
 
     if print_stats:
-        for hv in psy_curve_df.habit_value.unique():
+        _df = psy_curve_df.copy()
+        _df[f"{x}_value"] = _df[f"{x}_value"].astype(float)
+        values = _df[f"{x}_value"].unique()
+        for v in values:
+            print(v)
             stats_df = mixed_anova(
                 dv="p_correct",
                 within="stim_trial",
                 between="condition",
                 subject="subject_ID",
-                data=psy_curve_df[psy_curve_df.habit_value == hv],
+                data=_df[_df[f"{x}_value"] == v],
             )
             p_int = stats_df.loc[stats_df["Source"] == "Interaction"].iloc[0]
-            print(f"Habit value {hv:.2f}: group x stim p={p_int['p-unc']:.3f}")
+            print(f"{x.capitalize()} value {v:.2f}: group x stim p={p_int['p-unc']:.3f}")
 
 
 def get_psychometrics_df(
@@ -251,6 +256,7 @@ def get_psychometrics_df(
     decision_points_only=True,
     x="habit",
     x_bins=8,
+    beta=1.0,
 ):
     """ """
     # filter data
@@ -267,7 +273,7 @@ def get_psychometrics_df(
     for subject in SUBJECT_IDS:
         for stim_trial in [True, False]:
             subj_df = df[(df.subject_ID == subject) & (df.stim_trial == stim_trial)].copy()
-            psy_curve = get_psychometric_curve(subj_df, x=x, bins=x_bins)
+            psy_curve = get_psychometric_curve(subj_df, x=x, bins=x_bins, beta=beta)
             psy_curve["subject_ID"] = subject
             psy_curve["condition"] = subj_df.condition.unique()[0]
             psy_curve["stim_trial"] = stim_trial
@@ -277,12 +283,17 @@ def get_psychometrics_df(
     return psy_curve_df
 
 
-def get_psychometric_curve(df, x="habit", bins=5):
+def get_psychometric_curve(df, x="habit", bins=5, beta=1.0):
     """ """
     # add column for if subject choice == y
     df[("correct", "")] = ((df.subject_choice == 1) & (df.optimal_action == 1)).any(axis=1)
     # get x value for correct action (handeling for multiple optimal actions)
-    x_probs = df[x].values
+    if x == "vector":
+        values = np.where(df.available.values.astype(bool), beta * df[x].values, -np.inf)
+        exp_v = np.where(np.isfinite(values), np.exp(values - values.max(axis=1, keepdims=True)), 0.0)
+        x_probs = exp_v / exp_v.sum(axis=1, keepdims=True)
+    else:
+        x_probs = df[x].values
     opt_mask = df.optimal_action.values.astype(bool)
     df[("x_prob", "value")] = (x_probs * opt_mask).sum(axis=1) / opt_mask.sum(axis=1)
     df[("x_prob", "bin")] = pd.cut(
