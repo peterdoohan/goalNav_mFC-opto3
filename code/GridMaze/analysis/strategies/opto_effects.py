@@ -129,7 +129,6 @@ def get_group_by_stim_strategy_weights(
     # vector and structure strategies disagree
     if vector_structure_different:
         vec = df.vector.copy()
-        # vec[df.available] = -1
         vector_choice = vec.idxmax(axis=1)
         struc_bool_df = df.structure.eq(1)
         col_positions = struc_bool_df.columns.get_indexer(vector_choice)
@@ -147,7 +146,7 @@ def get_group_by_stim_strategy_weights(
         for stim_trial in [True, False]:
             _df = subj_df[subj_df.stim_trial == stim_trial]
             # fit strategy weights on select data
-            strategy_weights = models.get_navigation_strategy_weights(_df, strategies=strategies)
+            strategy_weights = models.get_navigation_strategy_weights(_df, strategies=strategies, zscore=True)
             results.append(
                 {
                     "subject_ID": subject,

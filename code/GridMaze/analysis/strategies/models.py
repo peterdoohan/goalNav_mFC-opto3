@@ -14,6 +14,7 @@ from GridMaze.analysis.strategies import get_input_data as gid
 INVALID_TRANSITION = -100
 LOG_MAX_FLOAT = np.log(sys.float_info.max / 2.1)
 
+NSEW = ["N", "S", "E", "W"]
 
 # %% Modelling functions
 
@@ -21,6 +22,7 @@ LOG_MAX_FLOAT = np.log(sys.float_info.max / 2.1)
 def get_navigation_strategy_weights(
     navigation_strategies_df,
     strategies=["vector", "structure", "backtracking_penalty"],
+    zscore=False,
 ):
     """
     Calculates the weight of each input strategy for explain subject's navigational
@@ -30,6 +32,14 @@ def get_navigation_strategy_weights(
     using the same strategies as provided here.
     """
     df = navigation_strategies_df.copy()
+    if zscore:
+        available = df["available"][NSEW].to_numpy(dtype=bool)
+        for s in strategies:
+            vals = df[s][NSEW].to_numpy(dtype=float)
+            available_vals = vals[available]
+            std = available_vals.std()
+            if std > 0:
+                df[s] = (df[s] - available_vals.mean()) / std
     # fit weights to data
     initial_weights = np.zeros(len(strategies))
     result = minimize(
@@ -49,7 +59,6 @@ def get_neg_loglikelihood(weights, strategies, df):
     """
     if len(weights) != len(strategies):
         raise ValueError("weights and strategies must have same length")
-    NSEW = ["N", "S", "E", "W"]
     # start with zeros and accumulate weighted strategy columns
     V = np.zeros((len(df), 4), dtype=float)
     for w, s in zip(weights, strategies):
