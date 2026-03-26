@@ -127,7 +127,7 @@ def get_subject_decisions_df(
     sessions = gs.get_maze_sessions(
         subject_IDs=[subject_ID],
         total_stim_days="all",
-        with_data=["trajectories_df", "trial_info_df", "trials_df"],
+        with_data=["trajectories_df", "trial_info_df", "trials_df", "session_info"],
         must_have_data=True,
         verbose=False,
     )

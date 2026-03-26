@@ -95,13 +95,15 @@ def plot_mixture_of_strategy_weights(
 def get_group_by_stim_strategy_weights(
     navigation_strategies_df,
     strategies=["vector", "structure", "habit", "backtracking_penalty"],
-    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    stim_day_range=(4, gs.TOTAL_STIM_DAYS),
+    steps_to_goal_range=None,
     max_trial_duration=None,
-    stim_only=True,
+    stim_only=False,
     subsample_non_stim_trials=False,
     decision_point_only=False,
     vector_structure_different=False,
     goal_sight_only=False,
+    ignore_sessions_with_issues=False,
 ):
     """ """
     # filter data
@@ -120,6 +122,8 @@ def get_group_by_stim_strategy_weights(
         df = df[df.goal_sight]
     if stim_only:
         df = df[df.time_in_trial.le(MAX_STIM_DURATION)]
+    if steps_to_goal_range is not None:
+        df = df[df.steps_to_goal.between(*steps_to_goal_range)]
     if decision_point_only:
         df = df[df.node_degree.gt(2)]
     # vector and structure strategies disagree
@@ -132,6 +136,8 @@ def get_group_by_stim_strategy_weights(
         arr = struc_bool_df.to_numpy(dtype=bool)
         mask = arr[np.arange(len(struc_bool_df)), col_positions]
         df = df[mask]
+    if ignore_sessions_with_issues:
+        df = df[~df.noted_session_issues]
 
     # fit nav strategy weights for stim_on and stim_off decisions per subject
     results = []
@@ -140,10 +146,6 @@ def get_group_by_stim_strategy_weights(
         condition = subj_df.condition.unique()[0]
         for stim_trial in [True, False]:
             _df = subj_df[subj_df.stim_trial == stim_trial]
-            # if stim_only:
-            #     _df = subj_df[subj_df.stim_trial == stim_trial]
-            # else:
-            #     _df = subj_df[subj_df.stim_on == stim_trial]
             # fit strategy weights on select data
             strategy_weights = models.get_navigation_strategy_weights(_df, strategies=strategies)
             results.append(

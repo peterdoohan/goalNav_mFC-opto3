@@ -388,6 +388,9 @@ def get_init_df(
             ("day_on_maze", ""): session.day_on_maze,
             ("stim_day", ""): session.stim_day,
             ("total_stim_days", ""): session.total_stim_days,
+            ("noted_session_issues", ""): isinstance(
+                session.session_notes, list
+            ),  # None if no issues, list of string is issues noted
         },
         index=init_df.index,
     )
