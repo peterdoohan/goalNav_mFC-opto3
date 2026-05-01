@@ -10,12 +10,12 @@ from matplotlib import pyplot as plt
 from pingouin import mixed_anova
 from scipy.optimize import curve_fit
 from tabulate import tabulate
+from pymer4.models import Lmer
 
 
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.core import plotting as cp
 from GridMaze.analysis.strategies import get_input_data as gid
-
 
 # %% Global Variables
 from GridMaze.paths import EXPERIMENT_INFO_PATH, RESULTS_PATH
@@ -30,13 +30,21 @@ MAX_STIM_DURATION = 30  # seconds
 
 def plot_prop_optimal(
     navigation_strategies_df,
-    strat_pairs=[("vector", "structure"), ("vector", "habit"), ("structure", "habit")],
+    strat_pair=("habit", "structure"),
+    conditional_pair=None,
+    conditional_agree=None,
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
-    stim_only=False,
+    stim_only=True,
     decision_points_only=False,
+    print_stats=True,
     axes=None,
 ):
-    """ """
+    """Plot P(optimal choice) on agree- vs disagree-decision-points for `strat_pair`.
+
+    Optionally restrict to a subset where `conditional_pair` agrees (or disagrees),
+    e.g. conditional_pair=("vector", "habit"), conditional_agree=False ->
+    only decision points where vector and habit pick different top actions.
+    """
     df = navigation_strategies_df.copy()
     if stim_day_range is not None:
         df = df[df.total_stim_days.between(*stim_day_range)]
@@ -46,37 +54,104 @@ def plot_prop_optimal(
         # nodes with degree 3 or 4
         df = df[df.available.sum(axis=1).gt(2)]
 
+    # apply conditional filter (e.g. only rows where vec == habit)
+    if conditional_pair is not None:
+        if conditional_agree is None:
+            raise ValueError("conditional_agree must be True or False when conditional_pair is set")
+        c1, c2 = conditional_pair
+        c1_mask = _tied_argmax_mask(df[c1], available_df=df.available)
+        c2_mask = _tied_argmax_mask(df[c2], available_df=df.available)
+        cond_agree_mask = (c1_mask & c2_mask).any(axis=1)
+        cond_keep = cond_agree_mask if conditional_agree else ~cond_agree_mask
+        if print_stats:
+            cond_rel = "==" if conditional_agree else "!="
+            print(
+                f"Conditional {c1} {cond_rel} {c2}: "
+                f"kept {int(cond_keep.sum())}/{len(cond_keep)} decisions "
+                f"({100 * cond_keep.mean():.1f}%)"
+            )
+        df = df.loc[cond_keep]
+
     # set up fig
     if axes is None:
-        fig, axes = plt.subplots(1, len(strat_pairs), figsize=(2 * len(strat_pairs), 3))
+        _, axes = plt.subplots(1, 2, figsize=(4, 3))
 
     # define correct choices
     df[("correct", "")] = ((df.subject_choice == 1) & (df.optimal_action == 1)).any(axis=1)
-    # filter for points where strats disagree (tie-aware and availability-aware)
-    for (strat_1, strat_2), ax in zip(strat_pairs, axes):
-        s1 = df[strat_1].copy()
-        s2 = df[strat_2].copy()
-        available_df = df.available.copy()
-        s1_choice_mask = _tied_argmax_mask(s1, available_df=available_df)
-        s2_choice_mask = _tied_argmax_mask(s2, available_df=available_df)
-        disagree_mask = ~(s1_choice_mask & s2_choice_mask).any(axis=1)
-        df = df.loc[disagree_mask]
-        print(disagree_mask.mean())
-        # on filtered data not if subjects were correct get group x stim
-        res = df.groupby(["subject_ID", "condition", "stim_trial"]).correct.mean().reset_index(name="prob_correct")
-        _max = res.prob_correct.max() + 0.1
-        _min = res.prob_correct.min() - 0.1
-        cp.plot_group_by_stim(res, y="prob_correct", print_stats=True, legend=False, ax=ax)
-        ax.set_ylim(_min, _max)
-        ax.set_xlabel(f"{strat_1} \n != \n {strat_2}")
+    # compute agree mask for the strat pair (tie-aware and availability-aware)
+    strat_1, strat_2 = strat_pair
+    s1 = df[strat_1].copy()
+    s2 = df[strat_2].copy()
+    available_df = df.available.copy()
+    s1_choice_mask = _tied_argmax_mask(s1, available_df=available_df)
+    s2_choice_mask = _tied_argmax_mask(s2, available_df=available_df)
+    agree_mask = (s1_choice_mask & s2_choice_mask).any(axis=1)
+
+    # build a label suffix for the conditional, used in prints + xlabels
+    if conditional_pair is not None:
+        cond_rel = "==" if conditional_agree else "!="
+        cond_suffix = f" | {conditional_pair[0]} {cond_rel} {conditional_pair[1]}"
+        xlabel_suffix = f"\n| {conditional_pair[0]} {cond_rel} {conditional_pair[1]}"
+    else:
+        cond_suffix = ""
+        xlabel_suffix = ""
+
+    # plot agree and disagree side by side
+    res_list = []
+    for i, (strats_agree, ax) in enumerate(zip([True, False], axes)):
+        keep_mask = agree_mask if strats_agree else ~agree_mask
+        n_total = len(keep_mask)
+        n_kept = int(keep_mask.sum())
+        sub_df = df.loc[keep_mask]
+        if print_stats:
+            rel_word = "agree" if strats_agree else "disagree"
+            print(
+                f"{strat_1} {rel_word} {strat_2}{cond_suffix}: " f"included {100 * n_kept / n_total:.1f}% of decisions"
+            )
+        res = sub_df.groupby(["subject_ID", "condition", "stim_trial"]).correct.mean().reset_index(name="prob_correct")
+        res["strats_agree"] = strats_agree
+        res_list.append(res)
+        cp.plot_group_by_stim(res, y="prob_correct", print_stats=print_stats, legend=False, ax=ax)
+        ax.set_ylim(res.prob_correct.min() - 0.1, res.prob_correct.max() + 0.1)
+        rel = "==" if strats_agree else "!="
+        ax.set_xlabel(f"{strat_1} \n {rel} \n {strat_2}{xlabel_suffix}")
+        ax.set_ylabel("P(correct)" if i == 0 else "")
+
+    # 3-way mixed ANOVA: condition x stim_trial x strats_agree (on the conditional subset)
+    if print_stats:
+        res_long = pd.concat(res_list, ignore_index=True)
+        aov = run_3way_lmer_anova(res_long, dv="prob_correct")
+        row_name = "condition:stim_trial:strats_agree"
+        if row_name in aov.index:
+            r = aov.loc[row_name]
+            summary = (
+                f"3-way (group × stim × strats_agree):\n"
+                f"F({r['NumDF']:.0f}, {r['DenomDF']:.1f}) = {r['F-stat']:.2f}, p = {r['P-val']/2:.3g}"
+            )
+            axes[0].figure.suptitle(summary, fontsize=9)
+
+
+def run_3way_lmer_anova(res_long, dv="prob_correct"):
+    """3-way mixed ANOVA via lmer: condition x stim_trial x strats_agree.
+
+    Type III F-table with Satterthwaite df, computed by R's lmerTest via pymer4.
+    Most analogous to extending pingouin.mixed_anova to a 2-within + 1-between design.
+    Random intercept per subject; condition is between-subject and is correctly handled
+    by the lme4 formula (it does not vary within subject_ID).
+    """
+    formula = f"{dv} ~ condition * stim_trial * strats_agree + (1|subject_ID)"
+    m = Lmer(formula, data=res_long)
+    m.fit(summarize=False)
+    aov = m.anova()
+    print("3-way mixed ANOVA (lmer, Type III, Satterthwaite df):")
+    print(tabulate(aov, headers="keys", tablefmt="psql"))
+    return aov
 
 
 def _tied_argmax_mask(action_values_df, available_df=None):
     """Return a boolean (n_rows x n_actions) mask for all tied argmax actions.
     If available_df is provided, unavailable actions are excluded from the argmax.
     """
-    if not isinstance(action_values_df, pd.DataFrame):
-        raise TypeError("action_values_df must be a pandas DataFrame")
 
     values = action_values_df.to_numpy(dtype=float)
     avail = available_df.values.astype(bool)
