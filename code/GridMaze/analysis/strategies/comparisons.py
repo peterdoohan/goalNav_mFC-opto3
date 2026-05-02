@@ -1,6 +1,7 @@
 """
 Strategy-agreement comparisons: P(target_strategy) on decision-point subsets where
-named strategies agree/disagree, with a 3-way mixed LMM (condition × stim_trial × {strats_agree | scenario}).
+named strategies agree/disagree, with a 3-way mixed LMM
+(condition × stim_trial × {strats_agree | scenario | target_strategy}).
 """
 
 # %% Imports
@@ -151,6 +152,74 @@ def plot_prop_scenarios(
         _suptitle_3way(axes[0].figure, aov, third_factor="scenario", one_tailed=True)
 
 
+def plot_match_targets(
+    navigation_strategies_df,
+    constraints=("vector != structure",),
+    target_strategies=("vector", "structure"),
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    stim_only=True,
+    decision_points_only=True,
+    show_chance=False,
+    print_stats=True,
+    axes=None,
+):
+    """For decisions in a scenario subset (AND of constraints), plot a group×stim panel
+    per target strategy showing P(match target).
+
+    Each panel: cp.plot_group_by_stim of P(target) on the subset (group × stim_trial).
+    Y-limits are set per panel (zoomed to that target's data range) so cross-group
+    differences within a panel stay visible. show_chance overlays a dashed line per
+    panel at the average P(match target | uniform-over-available) for that subset.
+
+    Runs a 3-way mixed LMM (condition × stim_trial × target_strategy) across panels.
+    """
+    if axes is None:
+        _, axes = plt.subplots(
+            1,
+            len(target_strategies),
+            figsize=(2 * len(target_strategies), 3),
+        )
+    axes = np.atleast_1d(axes)
+
+    res_list = []
+    for i, (target, ax) in enumerate(zip(target_strategies, axes)):
+        df = _filter_navigation_df(
+            navigation_strategies_df,
+            stim_day_range,
+            stim_only,
+            decision_points_only,
+            target_strategy=target,
+        )
+        keep_mask = _scenario_keep_mask(df, list(constraints))
+        sub_df = df.loc[keep_mask]
+
+        if i == 0 and print_stats:
+            print(
+                f"[{' & '.join(constraints)}]: "
+                f"kept {int(keep_mask.sum())}/{len(keep_mask)} decisions ({100 * keep_mask.mean():.1f}%)"
+            )
+
+        res = sub_df.groupby(["subject_ID", "condition", "stim_trial"]).correct.mean().reset_index(name="prob_correct")
+        res["target_strategy"] = target
+        res_list.append(res)
+
+        cp.plot_group_by_stim(res, y="prob_correct", print_stats=print_stats, legend=False, ax=ax)
+        ax.set_ylim(res.prob_correct.min() - 0.1, res.prob_correct.max() + 0.1)
+        ax.set_xlabel(f"P({target})")
+        if show_chance:
+            chance_mean = float(np.nanmean(_chance_match(sub_df, target)))
+            ax.axhline(chance_mean, color="black", linestyle="--", linewidth=0.8, alpha=0.6)
+
+    axes[0].set_ylabel("P(match target)")
+    for ax in axes[1:]:
+        ax.set_ylabel("")
+
+    if print_stats:
+        res_long = pd.concat(res_list, ignore_index=True)
+        aov = run_3way_lmer_anova(res_long, dv="prob_correct", third_factor="target_strategy")
+        _suptitle_3way(axes[0].figure, aov, third_factor="target_strategy", one_tailed=True)
+
+
 def run_3way_lmer_anova(res_long, dv="prob_correct", third_factor="strats_agree"):
     """3-way mixed ANOVA via lmer: condition x stim_trial x {third_factor}.
 
@@ -220,6 +289,23 @@ def _scenario_keep_mask(df, constraints):
         agree = _strats_agree_mask(df, a, b)
         keep &= agree if want_agree else ~agree
     return keep
+
+
+def _chance_match(df, target_strategy):
+    """Per-row P(match target_strategy | uniform random over available actions).
+
+    Equals |top_actions(target) ∩ available| / |available|. Adapts to ties and node degree.
+    """
+    if target_strategy == "structure":
+        top = (df.optimal_action == 1).values
+    else:
+        top = _tied_argmax_mask(df[target_strategy], available_df=df.available)
+    avail = df.available.values.astype(bool)
+    n_top = (top & avail).sum(axis=1)
+    n_avail = avail.sum(axis=1).astype(float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        chance = np.where(n_avail > 0, n_top / n_avail, np.nan)
+    return chance
 
 
 def _suptitle_3way(fig, aov, third_factor="strats_agree", one_tailed=False):
