@@ -6,6 +6,7 @@
 ![Platform](https://img.shields.io/badge/platform-linux-lightgrey)
 ![Status](https://img.shields.io/badge/status-research-orange)
 ![License](https://img.shields.io/badge/license-BSD--style-green)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20268950.svg)](https://doi.org/10.5281/zenodo.20268950)
 
 <pre>
 ●     ●─────●     ●     ●─────●─────●
@@ -40,7 +41,7 @@
 - **Analysis** codebase implementing all optogenetic-experiment analyses presented in the parent paper
 - **Notebook summaries** of those analyses
 - **SLEAP video-tracking pipeline** ([SLEAP](https://sleap.ai/)) for top-down pose estimation
-- **Fiber-tip localisation pipeline** ([brainreg](https://brainglobe.info/documentation/brainreg/)) for registering histology to the Allen mouse atlas
+- **Viral expression localaisation pipeline** ([brainreg](https://brainglobe.info/documentation/brainreg/)) for registering histology to the Allen mouse atlas
 
 ---
 
@@ -61,29 +62,69 @@ The sections below walk through downloading the data, setting up the environment
 
 ## 📥 Downloading data and results
 
-The processed dataset and per-subject anatomy lives in the [companion data repo](https://github.com/peterdoohan/GridMaze-mFC-opto-DATA). Two ways to grab it:
+Both `data/` and `results/` are archived on Zenodo:
 
-#### Option 1 — `download_data.sh` helper script
+- 🆔 [10.5281/zenodo.20268950](https://doi.org/10.5281/zenodo.20268950)
 
-From inside `code/`:
+The record contains two zips:
 
-```bash
-bash download_data.sh
-```
+| File          | Contents                                              | Size    |
+|---------------|-------------------------------------------------------|---------|
+| `data.zip`    | `processed_data/` + `experiment_info/`                | 66.4 GB |
+| `results.zip` | saved analysis outputs (figures, behaviour, errors, strategies, anatomy) | 306 MB  |
 
-This lands `processed_data/` and `experiment_info/` in `../data/`, so the default `paths.py` resolution works without further configuration.
+> 📈 **About `results/`:** all contents of `results/` can be regenerated locally from the code in this repo and `processed_data/` from `data.zip`. `results.zip` is provided for convenience — some saved analyses (permutation tests, strategy-model fits) take a while to recompute, and downloading is faster.
 
-#### Option 2 — Manual
-
-Clone the [companion data repo](https://github.com/peterdoohan/GridMaze-mFC-opto-DATA) and follow its README. Place the resulting `data/` folder next to this `code/` folder:
+Pick whichever of the three options below suits you. The end goal in every case is the layout:
 
 ```
 parent_folder/
 ├── code/      <- this repo
-└── data/      <- from GridMaze-mFC-opto-DATA
+├── data/      <- from data.zip
+└── results/   <- from results.zip
 ```
 
-> 📥 **Raw + preprocessed data are not shipped.** Only `processed_data/` and `experiment_info/` are available for download — the raw video, pyControl logs, and serial-section histology are too large to host publicly. The preprocessing code is still provided so the full chain is inspectable. See [`GridMaze/preprocessing/README.md`](code/GridMaze/preprocessing/README.md).
+#### Option 1 — Manual download
+
+1. Open [zenodo.org/records/20268950](https://zenodo.org/records/20268950) in a browser.
+2. Download `data.zip` (required) and `results.zip` (optional).
+3. Unzip them so the layout above sits next to the cloned `code/`.
+4. If you placed `data/` and `results/` somewhere other than next to `code/`, edit `code/GridMaze/paths.py` to point at your local copies (see [Configuring paths](#configuring-paths-only-if-needed) below).
+
+#### Option 2 — curl
+
+From inside `parent_folder/`:
+
+```bash
+# required
+curl -L -o data.zip    https://zenodo.org/records/20268950/files/data.zip
+unzip data.zip && rm data.zip
+
+# optional
+curl -L -o results.zip https://zenodo.org/records/20268950/files/results.zip
+unzip results.zip && rm results.zip
+```
+
+By default `code/GridMaze/paths.py` resolves `data/` and `results/` relative to the `code/` directory, so this layout works out of the box. If you placed the data elsewhere, see [Configuring paths](#configuring-paths-only-if-needed).
+
+#### Option 3 — `download_data.sh` helper script
+
+A helper script in `code/` handles the curl + MD5-verify + unzip dance and lands the data and results in the correct sibling folders, so the default `paths.py` resolution works without further configuration. Run from inside `code/`:
+
+```bash
+# defaults: download both data.zip + results.zip, verify MD5, unzip into ../data and ../results
+bash download_data.sh
+
+# data only, skip the (small) saved results
+bash download_data.sh --no-results
+
+# custom destinations
+bash download_data.sh --data-dir /scratch/gridmaze/data --results-dir /scratch/gridmaze/results
+```
+
+> 📥 **Raw + preprocessed data are not shared.** Only `processed_data/` and `experiment_info/` are bundled in `data.zip` — the raw video, pyControl logs, and serial-section histology are too large to host publicly. The preprocessing code is still provided so the full chain is inspectable. See [`GridMaze/preprocessing/README.md`](code/GridMaze/preprocessing/README.md).
+
+> 💡 **Lightweight loader only?** If you don't need this analysis codebase, the [companion data repo](https://github.com/peterdoohan/GridMaze-mFC-opto-DATA) ships a minimal loader package + tutorials over the same Zenodo data.
 
 ---
 
@@ -192,12 +233,25 @@ See [`Notebooks/README.md`](code/Notebooks/README.md) for the notebook index.
 
 ## 📜 Citation
 
+Please cite both the paper and the dataset:
+
 ```bibtex
 @article{placeholder,
   title  = {Structured and flexible representations in medial-frontal cortex
             support goal-directed navigation},
   author = {Doohan, Peter T. Jensen, Jensen, Kristopher, T. Chen, Yaqing. Godinho, Beatriz. Burns, Charles D.G. Qin, Chongyu (Xiao). Emery, Josie. Cini, Ryan. Walton, Mark E. T. Behrens, Timothy E.J. Akam, Thomas E.},
   year   = {2026}
+}
+
+@dataset{doohan_2026_opto_dataset,
+  title     = {Data and results for: Structured and flexible representations in
+               medial-frontal cortex support goal-directed navigation
+               [optogenetics experiment]},
+  author    = {Doohan, Peter T. and Behrens, Timothy E.J. and Akam, Thomas E.},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.20268950},
+  url       = {https://doi.org/10.5281/zenodo.20268950}
 }
 ```
 
