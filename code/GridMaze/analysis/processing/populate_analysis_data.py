@@ -6,12 +6,9 @@ data/analysis_data.
 
 # %% Imports
 import json
-from pathlib import Path
-from datetime import date
 from joblib import Parallel, delayed
 
 from GridMaze.analysis.processing.get_navigation_dfs import get_navigation_df
-from GridMaze.analysis.processing.get_navigation_strategies_dfs import get_navigation_strategies_df
 from GridMaze.analysis.processing.get_trajectory_decisions_dfs import get_trajectory_decisions_df
 
 # %% Global Variables
@@ -43,7 +40,6 @@ def populate_analysis_data(
     """ """
     data_structure2func = {
         "navigation_df": _save_navigation_df,
-        "navigation_strategies_df": _save_navigation_strategies_df,
         "trajectory_decisions_df": _save_trajectory_decisions_df,
     }
     if any([data_structure not in data_structure2func.keys() for data_structure in data_structures]):
@@ -99,25 +95,6 @@ def _save_navigation_df(processed_data_path, analysis_data_path, overwrite):
             lambda x: str(x)
         )  # converts column names to strings for saving as parquet
         navigation_df.to_parquet(navigation_df_path, compression="gzip", index=False)
-    return
-
-
-def _save_navigation_strategies_df(processed_data_path, analysis_data_path, overwrite):
-    """ """
-    prerequisit_data = [
-        processed_data_path / "trials.htsv",
-        processed_data_path / "session_info.json",
-        analysis_data_path / "frames.navigation.parquet",
-    ]
-    if not _prerequisit_data_exists(prerequisit_data):
-        return print(
-            f"Missing pre-requisite processed data structures, cannot generate navigation_strategies_df for {processed_data_path.parts[-2:]}"
-        )
-    navigation_strategies_df_path = analysis_data_path / "navigation_strategies_dataframe.parquet"
-    if not _data_exists(navigation_strategies_df_path, overwrite):
-        navigation_strategies_df = get_navigation_strategies_df(processed_data_path, analysis_data_path)
-        navigation_strategies_df.columns = navigation_strategies_df.columns.map(lambda x: str(x))
-        navigation_strategies_df.to_parquet(navigation_strategies_df_path, compression="gzip", index=False)
     return
 
 
