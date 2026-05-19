@@ -32,8 +32,8 @@ Figures are saved to `../results/figures/<notebook_name>/`.
 
 | Notebook | Paper figure | Contents |
 |---|---|---|
-| [`2.opto.ipynb`](2.opto.ipynb) | Fig. 2 | Learning curves and expert performance (opto vs. control, per maze); within-trial performance under mFC inhibition (excess steps, distance-to-goal on stim vs. non-stim trials); allocentric / egocentric error maps; error-correction dynamics; mixture-of-strategies model fits and opto effects on strategy weights. |
-| [`opto_extra.ipynb`](opto_extra.ipynb) | Supplementary | Per-subject viral-expression anatomy (GtACR2 fluorescence inside the fiber-tip illumination cone, broken down by frontal-cortex region); control-group performance sanity checks; expression-vs-behavioural-effect correlations. |
+| [`2.opto.ipynb`](2.opto.ipynb) | Fig. 2 | Learning curves and expert performance (opto vs. control, per maze); within-trial performance under mFC inhibition (excess steps, distance-to-goal on stim vs. non-stim trials); error-correction dynamics|
+| [`opto_extra.ipynb`](opto_extra.ipynb) | Supplementary | Per-subject viral-expression anatomy; mixture-of-strategies model fits and opto effects on strategy weights. Excess-steps stratified by goal etc.|
 
 ---
 

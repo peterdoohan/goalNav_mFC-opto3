@@ -51,7 +51,7 @@ This code repo is designed to live inside a parent folder alongside its `data/` 
 ```
 parent_folder/
 ├── 💻 code/      <- this repo
-├── 📦 data/      <- raw, preprocessed, processed, and analysis data
+├── 📦 data/      <- processed data, exepriment info and analysis data
 └── 📈 results/   <- figures and saved analysis outputs
 ```
 
@@ -96,12 +96,10 @@ git clone https://github.com/peterdoohan/GridMaze-mFC-opto.git code
 cd code
 conda env create -f environment.yml
 conda activate GridMaze_mFC_opto
-pip install -e .
 ```
 
 This installs Python 3.12 and the pinned set of dependencies used across preprocessing, analysis, and notebooks. Tested on Linux.
 
-> 🧠 **Optional:** the SLEAP tracking (`mazeSLEAP/`) and brainreg pipelines (`brainreg_fiber/`) pull in heavy GPU / atlas dependencies. Only install these if you need to re-run preprocessing from raw data — see the individual READMEs in [`mazeSLEAP/`](code/mazeSLEAP/README.md) and [`brainreg_fiber/`](code/brainreg_fiber/README.md).
 
 ---
 
@@ -109,11 +107,11 @@ This installs Python 3.12 and the pinned set of dependencies used across preproc
 
 ```
 data/
-├── raw_data/                <- data as it comes off the rig (not shipped)
+├── raw_data/                <- data as it comes off the rig (not shared)
 │   ├── pycontrol/           <- behavioural task readout
 │   ├── video/               <- top-down video of animals on the maze
 │   └── histology/           <- serial-section fluorescence stacks
-├── preprocessed_data/       <- outputs from raw-data preprocessing (not shipped)
+├── preprocessed_data/       <- outputs from raw-data preprocessing (not shared)
 │   ├── SLEAP/               <- top-down pose tracking
 │   └── brainreg/            <- histology registered to the Allen atlas
 ├── processed_data/          <- standardised, human-readable data (subject_ID/session_ID/)
@@ -146,7 +144,7 @@ Per-folder READMEs cover specific subsystems in more detail:
 
 ## ▶️ Running code locally
 
-After downloading `processed_data/`, you'll need to generate `analysis_data/` from it — handled by [`GridMaze/analysis/processing`](code/GridMaze/analysis/processing/README.md). `analysis_data/` mirrors `processed_data/` in structure but contains derived data tables that are convenient starting points for the analyses in the Notebooks.
+After downloading `processed_data/`, you'll need to generate `analysis_data/` from it — handled by [`GridMaze/analysis/processing`](code/GridMaze/analysis/processing/README.md). `analysis_data/` mirrors `processed_data/` in structure but contains derived data tables that are convenient starting points for the analyses.
 
 **Build `analysis_data/`** from `processed_data/`:
 
@@ -157,7 +155,7 @@ pad.populate_analysis_data()
 
 > ⚠️ Slow to generate without multiprocessing. See [`GridMaze/analysis/processing/README.md`](code/GridMaze/analysis/processing/README.md) for the full recipe.
 
-**If you're interested in how `processed_data/` was generated from raw recordings** (raw + preprocessed data are not shipped, so most users skip this): see [`GridMaze/preprocessing/README.md`](code/GridMaze/preprocessing/README.md).
+**If you're interested in how `processed_data/` was generated from raw recordings** (raw + preprocessed data are not shared directly): see [`GridMaze/preprocessing/README.md`](code/GridMaze/preprocessing/README.md).
 
 ```python
 from GridMaze.preprocessing import populate_processed_data as ppd
@@ -174,10 +172,6 @@ PROCESSED_DATA_PATH = Path("/absolute/path/to/your/data/processed_data")
 ANALYSIS_DATA_PATH  = Path("/absolute/path/to/your/data/analysis_data")
 RESULTS_PATH        = Path("/absolute/path/to/your/results")
 ```
-
-> ℹ️ Scripts and notebooks assume CWD = `code/` (notebooks `os.chdir` to it automatically). If you run a script from a different working directory, prefer absolute paths in `paths.py`.
-
----
 
 ## 📓 Jumping into the analyses
 
