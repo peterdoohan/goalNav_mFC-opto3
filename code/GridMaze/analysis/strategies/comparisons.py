@@ -13,9 +13,22 @@ from pymer4.models import Lmer
 
 from GridMaze.analysis.core import get_sessions as gs
 from GridMaze.analysis.core import plotting as cp
+from GridMaze.analysis.strategies import get_input_data as gid
 
 # %% Globs
 MAX_STIM_DURATION = 30  # seconds
+
+DEFAULT_SCENARIOS = {
+    "all": (),
+    "V=S": ("vector == structure",),
+    "V≠S": ("vector != structure",),
+    "H=S": ("habit == structure",),
+    "H≠S": ("habit != structure",),
+    "VHnotS": ("vector == habit", "vector != structure"),
+    "VSnotH": ("vector == structure", "vector != habit"),
+    "SHnotV": ("structure == habit", "structure != vector"),
+    "all_disagree": ("habit != vector", "habit != structure", "structure != vector"),
+}
 
 
 # %% Functions
@@ -27,7 +40,7 @@ def plot_prop_optimal(
     target_strategy="structure",
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     stim_only=True,
-    decision_points_only=False,
+    decision_point_filter="only",
     print_stats=True,
     axes=None,
 ):
@@ -39,9 +52,12 @@ def plot_prop_optimal(
 
     `target_strategy` controls what counts as a "correct" choice on the y-axis
     (default "structure" -> P(optimal); also "vector" or "habit").
+
+    `decision_point_filter`: "all" (no filter), "only" (degree>2 nodes), or "exclude"
+    (degree≤2 nodes, i.e. corridors only).
     """
     df = _filter_navigation_df(
-        navigation_strategies_df, stim_day_range, stim_only, decision_points_only, target_strategy=target_strategy
+        navigation_strategies_df, stim_day_range, stim_only, decision_point_filter, target_strategy=target_strategy
     )
 
     # apply conditional filter (e.g. only rows where vec == habit)
@@ -99,54 +115,75 @@ def plot_prop_optimal(
         _suptitle_3way(axes[0].figure, aov, third_factor="strats_agree", one_tailed=True)
 
 
-def plot_prop_scenarios(
+def plot_prop_across_scenarios(
     navigation_strategies_df,
-    scenario_1=["vector == structure", "vector != habit", "structure != habit"],
-    scenario_2=["vector != structure", "vector != habit", "structure != habit"],
+    scenarios={
+        "H≠S": ("habit != structure",),
+        "V≠S": ("vector != structure",),
+        "V≠S & H≠S": ("vector != structure", "habit != structure"),
+    },
     target_strategy="structure",
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     stim_only=True,
-    decision_points_only=False,
+    decision_point_filter="only",
+    show_chance=True,
+    sharey=False,
     print_stats=True,
     axes=None,
 ):
-    """Plot P(target_strategy) on two scenarios defined as conjunctions of strategy-agreement constraints.
+    """One group×stim panel per scenario; 3-way mixed LMM (condition × stim_trial × scenario) across panels.
 
-    Each scenario is a list of constraint strings of the form "A == B" or "A != B" where A/B are
-    strategy names (e.g. "vector", "structure", "habit"). All constraints in a scenario are AND'd
-    together to define the included decision points for that scenario's panel.
+    `scenarios` is a dict {label: tuple_of_constraints}. Each constraint is a string of the form
+    "A == B" or "A != B" where A/B are strategy names; constraints within a scenario are AND'd.
+    An empty tuple means "all rows".
 
     `target_strategy` controls what counts as a "correct" choice on the y-axis:
     "structure" (default) -> P(optimal); "habit" -> P(matches habit); "vector" -> P(matches vector).
 
-    Runs the same condition x stim_trial x scenario 3-way LMM as plot_prop_optimal.
+    `decision_point_filter`: "all" (no filter), "only" (degree>2 nodes), or "exclude"
+    (degree≤2 nodes, i.e. corridors only).
     """
     df = _filter_navigation_df(
-        navigation_strategies_df, stim_day_range, stim_only, decision_points_only, target_strategy=target_strategy
+        navigation_strategies_df, stim_day_range, stim_only, decision_point_filter, target_strategy=target_strategy
     )
+    scenarios = dict(scenarios)
+    order = list(scenarios.keys())
 
     if axes is None:
-        _, axes = plt.subplots(1, 2, figsize=(4, 3))
+        _, axes = plt.subplots(1, len(order), figsize=(2 * len(order), 3), sharey=sharey)
+    axes = np.atleast_1d(axes)
 
     res_list = []
-    for i, (constraints, ax) in enumerate(zip([scenario_1, scenario_2], axes)):
-        keep_mask = _scenario_keep_mask(df, constraints)
+    for i, (label, constraints) in enumerate(scenarios.items()):
+        keep_mask = _scenario_keep_mask(df, list(constraints))
         sub_df = df.loc[keep_mask]
         if print_stats:
             print(
-                f"[{' & '.join(constraints)}]: "
+                f"[{label}: {_scenario_label(constraints)}]: "
                 f"kept {int(keep_mask.sum())}/{len(keep_mask)} decisions ({100 * keep_mask.mean():.1f}%)"
             )
+
+        ax = axes[i]
+        if len(sub_df) == 0:
+            _render_empty_panel(ax, xlabel=label)
+            if i == 0:
+                ax.set_ylabel(f"P({target_strategy})")
+            continue
+
         res = sub_df.groupby(["subject_ID", "condition", "stim_trial"]).correct.mean().reset_index(name="prob_correct")
-        res["scenario"] = f"scenario_{i + 1}"
+        res["scenario"] = label
         res_list.append(res)
+
         cp.plot_group_by_stim(res, y="prob_correct", print_stats=print_stats, legend=False, ax=ax)
         ax.set_ylim(res.prob_correct.min() - 0.1, res.prob_correct.max() + 0.1)
-        ax.set_xlabel("\n".join(constraints))
+        ax.set_xlabel(label)
         ax.set_ylabel(f"P({target_strategy})" if i == 0 else "")
+        if show_chance:
+            chance_mean = float(np.nanmean(_chance_match(sub_df, target_strategy)))
+            ax.axhline(chance_mean, color="black", linestyle="--", linewidth=0.8, alpha=0.6)
 
-    # 3-way mixed ANOVA: condition x stim_trial x scenario
-    if print_stats:
+    # 3-way mixed ANOVA: condition x stim_trial x scenario (needs ≥2 non-empty scenarios)
+    if print_stats and len(res_list) >= 2:
         res_long = pd.concat(res_list, ignore_index=True)
         aov = run_3way_lmer_anova(res_long, dv="prob_correct", third_factor="scenario")
         _suptitle_3way(axes[0].figure, aov, third_factor="scenario", one_tailed=True)
@@ -158,8 +195,9 @@ def plot_match_targets(
     target_strategies=("vector", "structure"),
     stim_day_range=(6, gs.TOTAL_STIM_DAYS),
     stim_only=True,
-    decision_points_only=True,
+    decision_point_filter="only",
     show_chance=False,
+    scenario_label=None,
     print_stats=True,
     axes=None,
 ):
@@ -170,6 +208,9 @@ def plot_match_targets(
     Y-limits are set per panel (zoomed to that target's data range) so cross-group
     differences within a panel stay visible. show_chance overlays a dashed line per
     panel at the average P(match target | uniform-over-available) for that subset.
+
+    `decision_point_filter`: "all" (no filter), "only" (degree>2 nodes — default), or
+    "exclude" (degree≤2 nodes, i.e. corridors only).
 
     Runs a 3-way mixed LMM (condition × stim_trial × target_strategy) across panels.
     """
@@ -187,7 +228,7 @@ def plot_match_targets(
             navigation_strategies_df,
             stim_day_range,
             stim_only,
-            decision_points_only,
+            decision_point_filter,
             target_strategy=target,
         )
         keep_mask = _scenario_keep_mask(df, list(constraints))
@@ -195,9 +236,13 @@ def plot_match_targets(
 
         if i == 0 and print_stats:
             print(
-                f"[{' & '.join(constraints)}]: "
+                f"[{_scenario_label(constraints)}]: "
                 f"kept {int(keep_mask.sum())}/{len(keep_mask)} decisions ({100 * keep_mask.mean():.1f}%)"
             )
+
+        if len(sub_df) == 0:
+            _render_empty_panel(ax, xlabel=f"P({target})")
+            continue
 
         res = sub_df.groupby(["subject_ID", "condition", "stim_trial"]).correct.mean().reset_index(name="prob_correct")
         res["target_strategy"] = target
@@ -214,10 +259,82 @@ def plot_match_targets(
     for ax in axes[1:]:
         ax.set_ylabel("")
 
-    if print_stats:
+    if scenario_label is not None:
+        fig = axes[0].figure
+        fig.subplots_adjust(bottom=0.25)
+        fig.text(0.5, 0.02, scenario_label, ha="center", va="bottom", fontsize=9)
+
+    # 3-way LMM (condition × stim_trial × target_strategy) — needs ≥2 non-empty targets
+    if print_stats and len(res_list) >= 2:
         res_long = pd.concat(res_list, ignore_index=True)
         aov = run_3way_lmer_anova(res_long, dv="prob_correct", third_factor="target_strategy")
         _suptitle_3way(axes[0].figure, aov, third_factor="target_strategy", one_tailed=True)
+
+
+def smoke_test_optimal(
+    navigation_strategies_df=None,
+    scenarios=None,
+    target_strategy="structure",
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    stim_only=True,
+    decision_point_filter="only",
+    show_chance=True,
+    print_stats=True,
+):
+    """One figure: P(target_strategy) across scenarios as group×stim panels.
+
+    Parallel to `smoke_test_match_targets` — same scenario dict, same kwargs, but here
+    each scenario is a panel (target fixed) instead of a separate figure.
+    """
+    if navigation_strategies_df is None:
+        navigation_strategies_df = gid.get_navigation_strategies_df(verbose=True)
+    if scenarios is None:
+        scenarios = DEFAULT_SCENARIOS
+    print(f"\n========== P({target_strategy}) across scenarios ==========")
+    plot_prop_across_scenarios(
+        navigation_strategies_df,
+        scenarios=scenarios,
+        target_strategy=target_strategy,
+        stim_day_range=stim_day_range,
+        stim_only=stim_only,
+        decision_point_filter=decision_point_filter,
+        show_chance=show_chance,
+        print_stats=print_stats,
+    )
+
+
+def smoke_test_match_targets(
+    navigation_strategies_df=None,
+    scenarios=None,
+    target_strategies=("vector", "structure", "habit"),
+    stim_day_range=(6, gs.TOTAL_STIM_DAYS),
+    stim_only=True,
+    decision_point_filter="all",
+    show_chance=False,
+    print_stats=True,
+):
+    """One figure per scenario: P(match target) across `target_strategies` as group×stim panels.
+
+    Parallel to `smoke_test_optimal` — same scenario dict, same kwargs, but here each
+    scenario gets its own figure with one panel per target_strategy.
+    """
+    if navigation_strategies_df is None:
+        navigation_strategies_df = gid.get_navigation_strategies_df(verbose=True)
+    if scenarios is None:
+        scenarios = DEFAULT_SCENARIOS
+    for label, constraints in scenarios.items():
+        print(f"\n========== {label}: {_scenario_label(constraints)} ==========")
+        plot_match_targets(
+            navigation_strategies_df,
+            constraints=constraints,
+            target_strategies=target_strategies,
+            stim_day_range=stim_day_range,
+            stim_only=stim_only,
+            decision_point_filter=decision_point_filter,
+            show_chance=show_chance,
+            scenario_label=f"{label}: {_scenario_label(constraints)}",
+            print_stats=print_stats,
+        )
 
 
 def run_3way_lmer_anova(res_long, dv="prob_correct", third_factor="strats_agree"):
@@ -237,7 +354,7 @@ def run_3way_lmer_anova(res_long, dv="prob_correct", third_factor="strats_agree"
 
 
 def _filter_navigation_df(
-    navigation_strategies_df, stim_day_range, stim_only, decision_points_only, target_strategy="structure"
+    navigation_strategies_df, stim_day_range, stim_only, decision_point_filter, target_strategy="structure"
 ):
     """Apply the standard row filters and add the 'correct' column.
 
@@ -245,15 +362,22 @@ def _filter_navigation_df(
     `target_strategy` (tie- and availability-aware). target_strategy='structure' uses the
     precomputed `optimal_action` column (mathematically equivalent to argmax of structure
     values restricted to available actions).
+
+    `decision_point_filter`: "all" (no degree filter), "only" (degree > 2 nodes — true
+    decision points), or "exclude" (degree ≤ 2 nodes — corridors only).
     """
     df = navigation_strategies_df.copy()
     if stim_day_range is not None:
         df = df[df.total_stim_days.between(*stim_day_range)]
     if stim_only:
         df = df[df.time_in_trial.le(MAX_STIM_DURATION)]
-    if decision_points_only:
-        # nodes with degree 3 or 4
-        df = df[df.available.sum(axis=1).gt(2)]
+    n_avail = df.available.sum(axis=1)
+    if decision_point_filter == "only":
+        df = df[n_avail.gt(2)]
+    elif decision_point_filter == "exclude":
+        df = df[n_avail.le(2)]
+    elif decision_point_filter != "all":
+        raise ValueError(f"decision_point_filter must be 'only', 'exclude', or 'all'; got {decision_point_filter!r}")
     chosen = (df.subject_choice == 1).values
     if target_strategy == "structure":
         top_mask = (df.optimal_action == 1).values
@@ -289,6 +413,21 @@ def _scenario_keep_mask(df, constraints):
         agree = _strats_agree_mask(df, a, b)
         keep &= agree if want_agree else ~agree
     return keep
+
+
+def _scenario_label(constraints):
+    """Pretty label for an iterable of constraints; '()' -> 'all'."""
+    return " & ".join(constraints) if constraints else "all"
+
+
+def _render_empty_panel(ax, xlabel):
+    """Placeholder rendering for an empty-data panel (e.g. degree-≤2 nodes have no
+    rows where two strategies disagree)."""
+    ax.text(0.5, 0.5, "no data", ha="center", va="center", transform=ax.transAxes, color="grey")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_xlabel(xlabel)
 
 
 def _chance_match(df, target_strategy):
