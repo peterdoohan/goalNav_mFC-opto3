@@ -139,8 +139,9 @@ conda env create -f environment.yml
 conda activate GridMaze_mFC_opto
 ```
 
-This installs Python 3.12 and the pinned set of dependencies used across preprocessing, analysis, and notebooks. Tested on Linux.
+This installs Python 3.12 and the dependencies needed to run the notebooks and the `GridMaze.analysis` pipeline. Tested on Linux.
 
+One package worth flagging: **`pymer4`** runs linear mixed-effects models by calling into R via `rpy2`, so the env pulls `r-base` and friends from conda-forge. This usually just works, but if it doesn't please [open a GitHub issue](https://github.com/peterdoohan/GridMaze-mFC-opto/issues).
 
 ---
 

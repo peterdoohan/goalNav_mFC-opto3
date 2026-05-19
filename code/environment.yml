@@ -1,0 +1,65 @@
+# Conda environment for the GridMaze mFC-opto analysis codebase
+#
+# Tested on Linux with miniconda. Create and activate with:
+#     conda env create -f environment.yml
+#     conda activate GridMaze_mFC_opto
+#
+# Scope: this env covers the notebooks and the GridMaze.analysis pipeline.
+# The mazeSLEAP/ (SLEAP) and brainreg_fiber/ (brainreg) preprocessing
+# pipelines use their own separate envs / HPC modules and are not included.
+
+name: GridMaze_mFC_opto
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.12
+
+  # --- R + pymer4 backend (must come from conda-forge) -----------------------
+  - r-base=4.3
+  - r-lme4
+  - r-lmertest
+  - r-emmeans
+  - r-broom
+  - r-broom.mixed
+  - rpy2=3.5
+
+  # --- numerical / dataframes ------------------------------------------------
+  - numpy=1.26
+  - pandas=2.2
+  - scipy=1.14
+  - scikit-learn=1.5
+  - scikit-image=0.24
+  - statsmodels=0.14
+  - networkx=3.3
+  - pyarrow=18
+
+  # --- plotting --------------------------------------------------------------
+  - matplotlib=3.10
+  - seaborn=0.13
+  - tabulate=0.9
+  - tifffile=2024.9
+
+  # --- notebooks -------------------------------------------------------------
+  - jupyterlab
+  - ipykernel
+  - ipywidgets
+  - notebook
+
+  - pip
+  - pip:
+      # brainglobe stack (anatomy plots)
+      - brainglobe-atlasapi==2.0.10
+      - brainrender==2.1.15
+      - vedo==2024.5.2
+
+      # stats helpers
+      - pingouin==0.5.5
+      - pymer4==0.8.2
+
+      # misc
+      - altair==5.4.1
+      - joblib==1.4.2
+      - torch==2.4.1
