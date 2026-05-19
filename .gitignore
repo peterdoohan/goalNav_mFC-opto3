@@ -5,3 +5,5 @@
 **/slurm/
 /data/*
 /results/*
+/results_old/
+/results.zip
